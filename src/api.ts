@@ -3,51 +3,28 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const POE_ACCOUNT = process.env.POE_ACCOUNT || ''; // e.g. zhihong0321
-const POESESSID = process.env.POESESSID || '';
 const USER_AGENT = 'PoE2TradeManager/1.0';
 
-if (!POESESSID) {
-    console.warn("WARNING: POESESSID is missing in .env. API calls will fail.");
-}
+// Helper to create client for a specific session
+const createClient = (sessId: string) => {
+    return axios.create({
+        baseURL: 'https://www.pathofexile.com', 
+        headers: {
+            'Cookie': `POESESSID=${sessId}`,
+            'User-Agent': USER_AGENT,
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    });
+};
 
-const client = axios.create({
-    baseURL: 'https://www.pathofexile.com', 
-    headers: {
-        'Cookie': `POESESSID=${POESESSID}`,
-        'User-Agent': USER_AGENT,
-        'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest'
-    }
-});
-
-// Interface for Tab Metadata
-interface Tab {
-    n: string; // Name
-    i: number; // Index
-    id: string;
-    type: string;
-    hidden: boolean;
-    selected: boolean;
-    colour?: any;
-    srcL?: string;
-    srcC?: string;
-    srcR?: string;
-}
-
-// Interface for Stash Tab Response
-interface StashTabResponse {
-    numTabs: number;
-    tabs: Tab[];
-    items?: any[]; // Items are only present if requesting a specific index
-}
-
-export async function getStashTabs(league: string = 'Standard') { 
+export async function getStashTabs(accountName: string, league: string, sessId: string) { 
+    const client = createClient(sessId);
     try {
         const encodedLeague = encodeURIComponent(league);
         const url = `/api/trade2/search/${encodedLeague}`;
         console.log(`Searching for seller items: ${client.defaults.baseURL}${url}`);
-        console.log(`Using Account: ${POE_ACCOUNT}`);
+        console.log(`Using Account: ${accountName}`);
         
         // Try the standard account filter
         let query: any = {
@@ -56,7 +33,7 @@ export async function getStashTabs(league: string = 'Standard') {
                 filters: {
                     trade_filters: {
                         filters: {
-                            account: { input: POE_ACCOUNT }
+                            account: { input: accountName }
                         }
                     }
                 }
@@ -65,17 +42,15 @@ export async function getStashTabs(league: string = 'Standard') {
 
         let response = await client.post(url, query);
         
-        // If 0 items and POE_ACCOUNT doesn't have a hashtag, try with the user-provided hashtag if possible
-        // But since we don't have it in POE_ACCOUNT, let's try the user's specific string first
-        if (response.data?.result?.length === 0 && !POE_ACCOUNT.includes('#')) {
-             const alternativeAccount = "zhihong0321#0501";
-             console.log(`No items found for ${POE_ACCOUNT}, trying alternative: ${alternativeAccount}`);
-             query.query.filters.trade_filters.filters.account.input = alternativeAccount;
-             response = await client.post(url, query);
+        // Fallback for hashtag logic
+        if (response.data?.result?.length === 0 && !accountName.includes('#')) {
+             // Logic to handle fallback if needed, or user must provide full tag in profile
+             // For now we assume user puts correct tag in profile
+             console.log(`No items found for ${accountName}. Ensure the profile has the correct account name (e.g. Name#1234).`);
         }
 
         if (response.data && response.data.result) {
-            console.log(`Found ${response.data.result.length} items for ${query.query.filters.trade_filters.filters.account.input}`);
+            console.log(`Found ${response.data.result.length} items for ${accountName}`);
             return response.data.result; 
         } else {
             console.error("Search API failed or returned no results:", response.data);
@@ -87,9 +62,9 @@ export async function getStashTabs(league: string = 'Standard') {
     }
 }
 
-
-export async function fetchItemDetails(itemIds: string[]) {
+export async function fetchItemDetails(itemIds: string[], sessId: string) {
     if (itemIds.length === 0) return [];
+    const client = createClient(sessId);
     
     // Trade API fetch limit is usually 10 items per call
     const chunks = [];
@@ -113,4 +88,6 @@ export async function fetchItemDetails(itemIds: string[]) {
     }
     return allItems;
 }
+
+
 

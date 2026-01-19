@@ -49,6 +49,18 @@ export async function initDB() {
                 value TEXT
             )
         `);
+
+        // Table for Tracking Profiles
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS tracking_profiles (
+                id SERIAL PRIMARY KEY,
+                account_name TEXT NOT NULL,
+                league TEXT NOT NULL,
+                sess_id TEXT NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
         
         // Insert default interval if not exists (default 10 minutes)
         await client.query(`
@@ -61,6 +73,55 @@ export async function initDB() {
         client.release();
     }
 }
+
+// --- Profiles ---
+
+export interface TrackingProfile {
+    id: number;
+    accountName: string;
+    league: string;
+    sessId: string;
+    isActive: boolean;
+}
+
+export async function addProfile(accountName: string, league: string, sessId: string) {
+    await pool.query(
+        'INSERT INTO tracking_profiles (account_name, league, sess_id) VALUES ($1, $2, $3)',
+        [accountName, league, sessId]
+    );
+}
+
+export async function getProfiles(): Promise<TrackingProfile[]> {
+    const res = await pool.query('SELECT * FROM tracking_profiles ORDER BY id ASC');
+    return res.rows.map(r => ({
+        id: r.id,
+        accountName: r.account_name,
+        league: r.league,
+        sessId: r.sess_id,
+        isActive: r.is_active
+    }));
+}
+
+export async function getActiveProfiles(): Promise<TrackingProfile[]> {
+    const res = await pool.query('SELECT * FROM tracking_profiles WHERE is_active = TRUE');
+    return res.rows.map(r => ({
+        id: r.id,
+        accountName: r.account_name,
+        league: r.league,
+        sessId: r.sess_id,
+        isActive: r.is_active
+    }));
+}
+
+export async function toggleProfile(id: number, isActive: boolean) {
+    await pool.query('UPDATE tracking_profiles SET is_active = $1 WHERE id = $2', [isActive, id]);
+}
+
+export async function deleteProfile(id: number) {
+    await pool.query('DELETE FROM tracking_profiles WHERE id = $1', [id]);
+}
+
+// --- Settings ---
 
 export async function getSetting(key: string): Promise<string | null> {
     const res = await pool.query('SELECT value FROM app_settings WHERE key = $1', [key]);
