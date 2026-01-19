@@ -9,6 +9,11 @@ const pool = new pg.Pool({
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
+// Handle pool errors to prevent process crashes
+pool.on('error', (err) => {
+    console.error('Unexpected error on idle client', err);
+});
+
 export async function initDB() {
     const client = await pool.connect();
     try {
@@ -59,6 +64,39 @@ export async function initDB() {
                 sess_id TEXT NOT NULL,
                 is_active BOOLEAN DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // Table for Market Watch Profiles
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS market_watch_profiles (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                league TEXT NOT NULL,
+                item_category TEXT,
+                min_ilvl INTEGER,
+                max_ilvl INTEGER,
+                min_req_level INTEGER,
+                max_req_level INTEGER,
+                min_quality INTEGER,
+                min_evasion INTEGER,
+                min_armour INTEGER,
+                min_es INTEGER,
+                sort_by TEXT NOT NULL, -- evasion, armour, es, dps, phys_dps
+                interval_min INTEGER DEFAULT 60,
+                last_run TIMESTAMP,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        // Table for Market Watch Snapshots
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS market_watch_snapshots (
+                id SERIAL PRIMARY KEY,
+                profile_id INTEGER REFERENCES market_watch_profiles(id) ON DELETE CASCADE,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                items_json JSONB NOT NULL
             )
         `);
         
@@ -245,8 +283,127 @@ export async function recordMovement(itemId: string, name: string, event: 'LISTE
         INSERT INTO item_movements (item_id, item_name, event_str, price, tab_name, timestamp)
         VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
     `;
-    await pool.query(query, [itemId, name, event, price, tabName]);
-    console.log(`[${event}] ${name} (${price}) in ${tabName}`);
+        await pool.query(query, [itemId, name, event, price, tabName]);
+        console.log(`[${event}] ${name} (${price}) in ${tabName}`);
+    }
+    
+    // --- Market Watch ---
+    
+    export interface MarketProfile {
+        id: number;
+        name: string;
+        league: string;
+        itemCategory: string;
+        minIlvl: number | null;
+        maxIlvl: number | null;
+        minReqLevel: number | null;
+        maxReqLevel: number | null;
+        minQuality: number | null;
+        minEvasion: number | null;
+        minArmour: number | null;
+        minEs: number | null;
+        sortBy: string;
+        intervalMin: number;
+        lastRun: Date | null;
+        isActive: boolean;
+    }
+    
+    export async function addMarketProfile(profile: Partial<MarketProfile>) {
+        const query = `
+            INSERT INTO market_watch_profiles (
+                name, league, item_category, min_ilvl, max_ilvl, 
+                min_req_level, max_req_level, min_quality, 
+                min_evasion, min_armour, min_es, sort_by, interval_min
+            ) VALUES (    , $2, $3, $4, $5, $6, $7, $8, $9,     0,     1,     2,     3)
+        `;
+        const values = [
+            profile.name, profile.league, profile.itemCategory, profile.minIlvl, profile.maxIlvl,
+            profile.minReqLevel, profile.maxReqLevel, profile.minQuality,
+            profile.minEvasion, profile.minArmour, profile.minEs, profile.sortBy, profile.intervalMin
+        ];
+        await pool.query(query, values);
+    }
+    
+    export async function getMarketProfiles(): Promise<MarketProfile[]> {
+        const res = await pool.query('SELECT * FROM market_watch_profiles ORDER BY id ASC');
+        return res.rows.map(r => ({
+            id: r.id,
+            name: r.name,
+            league: r.league,
+            itemCategory: r.item_category,
+            minIlvl: r.min_ilvl,
+            maxIlvl: r.max_ilvl,
+            minReqLevel: r.min_req_level,
+            maxReqLevel: r.max_req_level,
+            minQuality: r.min_quality,
+            minEvasion: r.min_evasion,
+            minArmour: r.min_armour,
+            minEs: r.min_es,
+            sortBy: r.sort_by,
+            intervalMin: r.interval_min,
+            lastRun: r.last_run,
+            isActive: r.is_active
+        }));
+    }
+    
+    export async function getMarketProfileById(id: number): Promise<MarketProfile | null> {
+        const res = await pool.query('SELECT * FROM market_watch_profiles WHERE id =     ', [id]);
+        const r = res.rows[0];
+        if (!r) return null;
+        return {
+            id: r.id,
+            name: r.name,
+            league: r.league,
+            itemCategory: r.item_category,
+            minIlvl: r.min_ilvl,
+            maxIlvl: r.max_ilvl,
+            minReqLevel: r.min_req_level,
+            maxReqLevel: r.max_req_level,
+            minQuality: r.min_quality,
+            minEvasion: r.min_evasion,
+            minArmour: r.min_armour,
+            minEs: r.min_es,
+            sortBy: r.sort_by,
+            intervalMin: r.interval_min,
+            lastRun: r.last_run,
+            isActive: r.is_active
+        };
+    }
+    
+    export async function updateMarketProfileLastRun(id: number) {
+        await pool.query('UPDATE market_watch_profiles SET last_run = CURRENT_TIMESTAMP WHERE id =     ', [id]);
+    }
+    
+    export async function toggleMarketProfile(id: number, isActive: boolean) {
+        await pool.query('UPDATE market_watch_profiles SET is_active =      WHERE id = $2', [isActive, id]);
+    }
+    
+    export async function deleteMarketProfile(id: number) {
+        await pool.query('DELETE FROM market_watch_profiles WHERE id =     ', [id]);
+    }
+    
+    export async function saveMarketSnapshot(profileId: number, items: any[]) {
+        await pool.query(
+            'INSERT INTO market_watch_snapshots (profile_id, items_json) VALUES (    , $2)',
+            [profileId, JSON.stringify(items)]
+        );
+    }
+    
+export async function getLatestMarketSnapshot(profileId: number) {
+    const res = await pool.query(
+        'SELECT * FROM market_watch_snapshots WHERE profile_id = $1 ORDER BY timestamp DESC LIMIT 1',
+        [profileId]
+    );
+    return res.rows[0];
 }
 
-export default pool;
+export async function getMarketSnapshots(profileId: number, limit: number = 24) {
+    const res = await pool.query(
+        'SELECT * FROM market_watch_snapshots WHERE profile_id = $1 ORDER BY timestamp DESC LIMIT $2',
+        [profileId, limit]
+    );
+    return res.rows;
+}
+    
+    export default pool;
+    

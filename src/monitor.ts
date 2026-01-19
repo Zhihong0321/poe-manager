@@ -1,4 +1,5 @@
 import { scan } from './scanner.js';
+import { runMarketScans } from './market_scanner.js';
 import { getSetting, initDB, getActiveProfiles } from './db.js';
 
 let isRunning = false;
@@ -6,35 +7,41 @@ let isRunning = false;
 export async function startMonitor() {
     if (isRunning) return;
     isRunning = true;
-    console.log(`Starting PoE 2 Sales Monitor.`);
+    console.log(`Starting PoE 2 Sales & Market Monitor.`);
     
-    // Ensure DB is ready
-    await initDB();
-    
-    scheduleScan();
+    try {
+        // Ensure DB is ready
+        await initDB();
+        scheduleScan();
+    } catch (err) {
+        console.error("Monitor failed to start due to DB error:", err);
+        isRunning = false;
+    }
 }
 
 async function scheduleScan() {
     if (!isRunning) return;
 
-    // Fetch dynamic interval
+    // 1. Sales Tracking Scans
     const intervalStr = await getSetting('scan_interval_min');
     const intervalMin = parseInt(intervalStr || '10', 10);
-    const intervalMs = Math.max(1, intervalMin) * 60 * 1000;
-
-    // Fetch Active Profiles
-    const profiles = await getActiveProfiles();
     
-    if (profiles.length === 0) {
-        console.log("No active tracking profiles found. Waiting...");
-    } else {
-        console.log(`Starting scan loop for ${profiles.length} profiles...`);
+    const profiles = await getActiveProfiles();
+    if (profiles.length > 0) {
         for (const profile of profiles) {
             await scan(profile);
         }
     }
 
-    console.log(`Next scan in ${intervalMin} minutes.`);
+    // 2. Market Watch Scans
+    try {
+        await runMarketScans();
+    } catch (err) {
+        console.error("Market scan error:", err);
+    }
+
+    const intervalMs = Math.max(1, intervalMin) * 60 * 1000;
+    console.log(`Next check in ${intervalMin} minutes.`);
     if (isRunning) {
         setTimeout(scheduleScan, intervalMs);
     }

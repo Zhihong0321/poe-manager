@@ -62,6 +62,30 @@ export async function getStashTabs(accountName: string, league: string, sessId: 
     }
 }
 
+// Generic Market Search (for trends/analysis)
+export async function searchTrade(league: string, query: any, sessId: string) {
+    const client = createClient(sessId);
+    try {
+        const encodedLeague = encodeURIComponent(league);
+        const url = `/api/trade2/search/${encodedLeague}`;
+        console.log(`Market Search: ${url}`);
+        
+        const response = await client.post(url, query);
+        
+        if (response.data && response.data.result) {
+            return {
+                id: response.data.id, // The search ID (e.g. "x7m3..."), useful for pagination URL
+                total: response.data.total, // Total results count
+                result: response.data.result // First 100 IDs
+            };
+        }
+        return null;
+    } catch (error: any) {
+        console.error("Error in Market Search:", error.response?.status, error.response?.data || error.message);
+        return null;
+    }
+}
+
 export async function fetchItemDetails(itemIds: string[], sessId: string) {
     if (itemIds.length === 0) return [];
     const client = createClient(sessId);
