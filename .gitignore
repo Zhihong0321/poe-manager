@@ -1,0 +1,7 @@
+node_modules
+.env
+*.db
+dist
+src/*.js
+src/*.d.ts
+src/*.map
