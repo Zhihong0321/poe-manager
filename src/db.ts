@@ -102,6 +102,19 @@ export async function getProfiles(): Promise<TrackingProfile[]> {
     }));
 }
 
+export async function getProfileById(id: number): Promise<TrackingProfile | null> {
+    const res = await pool.query('SELECT * FROM tracking_profiles WHERE id = $1', [id]);
+    const r = res.rows[0];
+    if (!r) return null;
+    return {
+        id: r.id,
+        accountName: r.account_name,
+        league: r.league,
+        sessId: r.sess_id,
+        isActive: r.is_active
+    };
+}
+
 export async function getActiveProfiles(): Promise<TrackingProfile[]> {
     const res = await pool.query('SELECT * FROM tracking_profiles WHERE is_active = TRUE');
     return res.rows.map(r => ({
@@ -210,6 +223,21 @@ export async function saveItem(item: any, tabName: string, tabIndex: number) {
 
 export async function removeItem(id: string) {
     await pool.query('DELETE FROM item_snapshots WHERE id = $1', [id]);
+}
+
+export async function getAllSnapshots() {
+    const res = await pool.query('SELECT * FROM item_snapshots ORDER BY last_seen DESC');
+    return res.rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        typeLine: row.type_line,
+        tabName: row.tab_name,
+        tabIndex: row.tab_index,
+        note: row.note,
+        stackSize: row.stack_size,
+        rawData: row.raw_data,
+        lastSeen: row.last_seen
+    }));
 }
 
 export async function recordMovement(itemId: string, name: string, event: 'LISTED' | 'SOLD', price: string, tabName: string) {
