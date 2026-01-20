@@ -11,8 +11,11 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
                 <input type="number" name="interval" value="${interval}" min="1" style="width: 60px;">
                 <button type="submit">Save</button>
             </form>
-            <div>
-                 <span style="color: #64748b; font-size: 0.9rem;">Auto-refreshing in background</span>
+            <div class="flex">
+                 <form method="POST" action="/tracking/refresh">
+                    <button type="submit" style="background: #3b82f6; color: white;">Refresh All</button>
+                 </form>
+                 <span style="color: #64748b; font-size: 0.9rem; margin-left: 10px;">Auto-refreshing in background</span>
             </div>
         </div>
 

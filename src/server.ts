@@ -154,6 +154,15 @@ app.post('/profiles/sync', async (req, res) => {
     res.redirect('/tracking');
 });
 
+app.post('/tracking/refresh', async (req, res) => {
+    console.log("Manual refresh triggered for all profiles.");
+    const profiles = await import('./db.js').then(m => m.getActiveProfiles());
+    for (const p of profiles) {
+        await scan(p);
+    }
+    res.redirect('/tracking');
+});
+
 // Start
 
 console.log("Starting server initialization...");

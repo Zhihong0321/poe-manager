@@ -58,17 +58,57 @@ export async function getStashTabs(accountName: string, league: string, sessId: 
         let totalOnServer = 0;
 
         // Helper to process results
-        const processRes = (res: any, label: string) => {
+        const processRes = (res: any) => {
             if (res.data && res.data.result) {
                 res.data.result.forEach((id: string) => ids.add(id));
                 if (res.data.total > totalOnServer) totalOnServer = res.data.total;
-                // console.log(`[${label}] Found ${res.data.result.length} items`);
             }
         };
 
-        processRes(resAsc, 'Asc');
-        processRes(resDesc, 'Desc');
-        processRes(resNew, 'New');
+        processRes(resAsc);
+        processRes(resDesc);
+        processRes(resNew);
+
+        // Check for truncation
+        if (ids.size < totalOnServer) {
+            console.log(`[Scan] Truncation detected (Found ${ids.size} / ${totalOnServer}). initiating Deep Scan by Category...`);
+            
+            const categories = ['weapon', 'armour', 'accessory', 'jewel', 'card', 'gem'];
+            
+            for (const cat of categories) {
+                // Construct category-specific query
+                const catQuery = JSON.parse(JSON.stringify(baseQuery));
+                if (!catQuery.query.filters.type_filters) catQuery.query.filters.type_filters = {};
+                if (!catQuery.query.filters.type_filters.filters) catQuery.query.filters.type_filters.filters = {};
+                catQuery.query.filters.type_filters.filters.category = { option: cat };
+                
+                // For each category, we just need "Asc" and "Desc" to cover range. 
+                // "New" is less critical per-category but good if we have capacity.
+                // Let's stick to Asc + Desc to keep request count reasonable (2 per cat).
+                
+                const qAsc = { ...catQuery, sort: { price: "asc" } };
+                const qDesc = { ...catQuery, sort: { price: "desc" } };
+                
+                try {
+                    // Run sequentially to avoid rate limits
+                    const [r1, r2] = await Promise.all([
+                        client.post(url, qAsc).catch(e => ({ data: { result: [] } })),
+                        client.post(url, qDesc).catch(e => ({ data: { result: [] } }))
+                    ]);
+                    
+                    if (r1.data?.result) r1.data.result.forEach((id: string) => ids.add(id));
+                    if (r2.data?.result) r2.data.result.forEach((id: string) => ids.add(id));
+                    
+                    console.log(`[Scan] Category ${cat}: ${ids.size} total items so far...`);
+                    
+                    // Delay to avoid rate limits (2s)
+                    await new Promise(r => setTimeout(r, 2000));
+                    
+                } catch (err: any) {
+                    console.error(`[Scan] Error scanning category ${cat}:`, err.response?.data || err.message);
+                }
+            }
+        }
 
         const combinedIds = Array.from(ids);
         console.log(`Found ${combinedIds.length} unique items (Server Total: ${totalOnServer})`);
