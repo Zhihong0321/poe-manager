@@ -27,7 +27,7 @@ export async function getStashTabs(accountName: string, league: string, sessId: 
         console.log(`Using Account: ${accountName}`);
         
         // Try the standard account filter
-        let query: any = {
+        let baseQuery: any = {
             query: {
                 status: { option: "any" },
                 filters: {
@@ -40,22 +40,48 @@ export async function getStashTabs(accountName: string, league: string, sessId: 
             }
         };
 
-        let response = await client.post(url, query);
-        
-        // Fallback for hashtag logic
-        if (response.data?.result?.length === 0 && !accountName.includes('#')) {
+        // Strategy: Fetch Cheapest (Asc), Most Expensive (Desc), and Newest (Indexed Desc)
+        // This covers the edges and the latest activity, maximizing coverage despite the 100-item limit.
+        const queryAsc = { ...baseQuery, sort: { price: "asc" } };
+        const queryDesc = { ...baseQuery, sort: { price: "desc" } };
+        const queryNew = { ...baseQuery, sort: { indexed: "desc" } };
+
+        console.log(`[Scan] Fetching items for ${accountName} (Price Asc/Desc + Newest)...`);
+
+        const [resAsc, resDesc, resNew] = await Promise.all([
+            client.post(url, queryAsc).catch(e => ({ data: { result: [], total: 0 }, error: e })),
+            client.post(url, queryDesc).catch(e => ({ data: { result: [], total: 0 }, error: e })),
+            client.post(url, queryNew).catch(e => ({ data: { result: [], total: 0 }, error: e }))
+        ]);
+
+        const ids = new Set<string>();
+        let totalOnServer = 0;
+
+        // Helper to process results
+        const processRes = (res: any, label: string) => {
+            if (res.data && res.data.result) {
+                res.data.result.forEach((id: string) => ids.add(id));
+                if (res.data.total > totalOnServer) totalOnServer = res.data.total;
+                // console.log(`[${label}] Found ${res.data.result.length} items`);
+            }
+        };
+
+        processRes(resAsc, 'Asc');
+        processRes(resDesc, 'Desc');
+        processRes(resNew, 'New');
+
+        const combinedIds = Array.from(ids);
+        console.log(`Found ${combinedIds.length} unique items (Server Total: ${totalOnServer})`);
+
+        if (combinedIds.length === 0) {
              // Logic to handle fallback if needed, or user must provide full tag in profile
-             // For now we assume user puts correct tag in profile
-             console.log(`No items found for ${accountName}. Ensure the profile has the correct account name (e.g. Name#1234).`);
+             if (!accountName.includes('#')) {
+                 console.log(`No items found for ${accountName}. Ensure the profile has the correct account name (e.g. Name#1234).`);
+             }
+             return [];
         }
 
-        if (response.data && response.data.result) {
-            console.log(`Found ${response.data.result.length} items for ${accountName}`);
-            return response.data.result; 
-        } else {
-            console.error("Search API failed or returned no results:", response.data);
-            return [];
-        }
+        return combinedIds;
     } catch (error: any) {
         console.error("Error in search API:", error.response?.status, error.response?.data || error.message);
         return [];

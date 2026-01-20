@@ -314,7 +314,7 @@ export async function recordMovement(itemId: string, name: string, event: 'LISTE
                 name, league, item_category, min_ilvl, max_ilvl, 
                 min_req_level, max_req_level, min_quality, 
                 min_evasion, min_armour, min_es, sort_by, interval_min
-            ) VALUES (    , $2, $3, $4, $5, $6, $7, $8, $9,     0,     1,     2,     3)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         `;
         const values = [
             profile.name, profile.league, profile.itemCategory, profile.minIlvl, profile.maxIlvl,
@@ -347,7 +347,7 @@ export async function recordMovement(itemId: string, name: string, event: 'LISTE
     }
     
     export async function getMarketProfileById(id: number): Promise<MarketProfile | null> {
-        const res = await pool.query('SELECT * FROM market_watch_profiles WHERE id =     ', [id]);
+        const res = await pool.query('SELECT * FROM market_watch_profiles WHERE id = $1', [id]);
         const r = res.rows[0];
         if (!r) return null;
         return {
@@ -371,20 +371,20 @@ export async function recordMovement(itemId: string, name: string, event: 'LISTE
     }
     
     export async function updateMarketProfileLastRun(id: number) {
-        await pool.query('UPDATE market_watch_profiles SET last_run = CURRENT_TIMESTAMP WHERE id =     ', [id]);
+        await pool.query('UPDATE market_watch_profiles SET last_run = CURRENT_TIMESTAMP WHERE id = $1', [id]);
     }
     
     export async function toggleMarketProfile(id: number, isActive: boolean) {
-        await pool.query('UPDATE market_watch_profiles SET is_active =      WHERE id = $2', [isActive, id]);
+        await pool.query('UPDATE market_watch_profiles SET is_active = $1 WHERE id = $2', [isActive, id]);
     }
     
     export async function deleteMarketProfile(id: number) {
-        await pool.query('DELETE FROM market_watch_profiles WHERE id =     ', [id]);
+        await pool.query('DELETE FROM market_watch_profiles WHERE id = $1', [id]);
     }
     
     export async function saveMarketSnapshot(profileId: number, items: any[]) {
         await pool.query(
-            'INSERT INTO market_watch_snapshots (profile_id, items_json) VALUES (    , $2)',
+            'INSERT INTO market_watch_snapshots (profile_id, items_json) VALUES ($1, $2)',
             [profileId, JSON.stringify(items)]
         );
     }
