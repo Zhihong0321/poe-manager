@@ -61,10 +61,18 @@ export async function initDB() {
                 id SERIAL PRIMARY KEY,
                 account_name TEXT NOT NULL,
                 league TEXT NOT NULL,
-                sess_id TEXT NOT NULL,
+                sess_id TEXT, -- Legacy
+                sess_ids TEXT, -- JSON Array of cookies
                 is_active BOOLEAN DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
+        `);
+
+        // Migration: ensure sess_ids exists for legacy rows
+        await client.query(`
+            UPDATE tracking_profiles 
+            SET sess_ids = jsonb_build_array(sess_id)::text 
+            WHERE sess_ids IS NULL AND sess_id IS NOT NULL
         `);
 
         // Table for Market Watch Profiles
@@ -118,14 +126,14 @@ export interface TrackingProfile {
     id: number;
     accountName: string;
     league: string;
-    sessId: string;
+    sessIds: string[];
     isActive: boolean;
 }
 
-export async function addProfile(accountName: string, league: string, sessId: string) {
+export async function addProfile(accountName: string, league: string, sessIds: string[]) {
     await pool.query(
-        'INSERT INTO tracking_profiles (account_name, league, sess_id) VALUES ($1, $2, $3)',
-        [accountName, league, sessId]
+        'INSERT INTO tracking_profiles (account_name, league, sess_ids) VALUES ($1, $2, $3)',
+        [accountName, league, JSON.stringify(sessIds)]
     );
 }
 
@@ -135,7 +143,7 @@ export async function getProfiles(): Promise<TrackingProfile[]> {
         id: r.id,
         accountName: r.account_name,
         league: r.league,
-        sessId: r.sess_id,
+        sessIds: r.sess_ids ? JSON.parse(r.sess_ids) : (r.sess_id ? [r.sess_id] : []),
         isActive: r.is_active
     }));
 }
@@ -148,7 +156,7 @@ export async function getProfileById(id: number): Promise<TrackingProfile | null
         id: r.id,
         accountName: r.account_name,
         league: r.league,
-        sessId: r.sess_id,
+        sessIds: r.sess_ids ? JSON.parse(r.sess_ids) : (r.sess_id ? [r.sess_id] : []),
         isActive: r.is_active
     };
 }
@@ -159,7 +167,7 @@ export async function getActiveProfiles(): Promise<TrackingProfile[]> {
         id: r.id,
         accountName: r.account_name,
         league: r.league,
-        sessId: r.sess_id,
+        sessIds: r.sess_ids ? JSON.parse(r.sess_ids) : (r.sess_id ? [r.sess_id] : []),
         isActive: r.is_active
     }));
 }

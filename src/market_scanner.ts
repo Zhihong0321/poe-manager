@@ -28,15 +28,15 @@ export async function executeMarketScan(profile: MarketProfile) {
         console.error("No active tracking profiles found to provide POESESSID for market search.");
         return;
     }
-    const sessId = firstProfile.sessId;
+    const sessIds = firstProfile.sessIds;
 
     const query = buildQuery(profile);
-    const searchResult = await searchTrade(profile.league, query, sessId);
+    const searchResult = await searchTrade(profile.league, query, sessIds);
 
     if (searchResult && searchResult.result.length > 0) {
         // Fetch details for top items (up to 40 to handle local sorting if needed)
         const topIds = searchResult.result.slice(0, 40);
-        const items = await fetchItemDetails(topIds, sessId);
+        const items = await fetchItemDetails(topIds, sessIds);
 
         const processedItems = items.map(i => processItemData(i, profile.sortBy));
         

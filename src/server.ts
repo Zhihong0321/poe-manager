@@ -128,7 +128,9 @@ app.post('/settings', async (req, res) => {
 app.post('/profiles/add', async (req, res) => {
     const { accountName, league, sessId } = req.body;
     if (accountName && league && sessId) {
-        await addProfile(accountName, league, sessId);
+        // Parse multiple session IDs (comma or newline separated)
+        const sessIds = sessId.split(/[,\n]+/).map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+        await addProfile(accountName, league, sessIds);
     }
     res.redirect('/tracking');
 });

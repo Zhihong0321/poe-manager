@@ -4,6 +4,11 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const USER_AGENT = 'PoE2TradeManager/1.0';
+const COOLDOWN_MS = 5000; // 5 Seconds Hard Limit per Cookie
+const RATE_LIMIT_PENALTY_MS = 60000; // 60s Penalty if we hit 429
+
+// Global map to track when each session can be used next
+const sessionCooldowns = new Map<string, number>();
 
 // Helper to create client for a specific session
 const createClient = (sessId: string) => {
@@ -18,15 +23,105 @@ const createClient = (sessId: string) => {
     });
 };
 
-export async function getStashTabs(accountName: string, league: string, sessId: string) { 
-    const client = createClient(sessId);
+/**
+ * Finds a ready session or waits until one is available.
+ * Returns the session ID to use.
+ */
+async function getNextAvailableSession(sessIds: string[]): Promise<string> {
+    if (sessIds.length === 0) throw new Error("No session IDs provided.");
+
+    while (true) {
+        const now = Date.now();
+        let earliestReadyTime = Infinity;
+        let readySession: string | null = null;
+
+        // 1. Try to find a ready session
+        for (const id of sessIds) {
+            const readyAt = sessionCooldowns.get(id) || 0;
+            if (now >= readyAt) {
+                readySession = id;
+                break; // Found one!
+            }
+            if (readyAt < earliestReadyTime) {
+                earliestReadyTime = readyAt;
+            }
+        }
+
+        // 2. If found, mark it used and return
+        if (readySession) {
+            sessionCooldowns.set(readySession, now + COOLDOWN_MS);
+            return readySession;
+        }
+
+        // 3. If none ready, wait
+        const waitTime = earliestReadyTime - now;
+        if (waitTime > 0) {
+            // console.log(`[RateLimit] All sessions on cooldown. Waiting ${Math.ceil(waitTime/1000)}s...`);
+            await new Promise(r => setTimeout(r, Math.min(waitTime, 1000))); // Check every 1s or exact time
+        } else {
+             // Should not happen if logic is correct, but safe fallback
+             await new Promise(r => setTimeout(r, 500));
+        }
+    }
+}
+
+/**
+ * Executes a request using the session rotation logic.
+ * Handles 429s by penalizing the session and retrying with another.
+ */
+async function requestWithRotation(
+    sessIds: string[], 
+    method: 'get' | 'post', 
+    url: string, 
+    data?: any
+): Promise<any> {
+    let attempts = 0;
+    const maxAttempts = sessIds.length * 3; // Try a few times per session effectively
+
+    while (attempts < maxAttempts) {
+        const sessId = await getNextAvailableSession(sessIds);
+        const client = createClient(sessId);
+
+        try {
+            if (method === 'get') {
+                return await client.get(url);
+            } else {
+                return await client.post(url, data);
+            }
+        } catch (error: any) {
+            const status = error.response?.status;
+            
+            if (status === 429) {
+                console.warn(`[API] Rate Limit (429) on session ...${sessId.slice(-4)}. Penalizing 60s.`);
+                sessionCooldowns.set(sessId, Date.now() + RATE_LIMIT_PENALTY_MS);
+            } else if (status === 403 || status === 401) {
+                console.warn(`[API] Auth/Forbidden (${status}) on session ...${sessId.slice(-4)}. Skipping for this run.`);
+                // Effectively remove from rotation for a long time or until restart
+                sessionCooldowns.set(sessId, Date.now() + 3600000); 
+            } else {
+                // Other errors (500, network) -> Throw or Retry?
+                // For "Sold" detection safety, we treat network errors as fatal for this request usually,
+                // but here we might want to try another session just in case it's a specific route issue?
+                // Let's retry with another session just to be safe.
+                console.warn(`[API] Error ${status} on session ...${sessId.slice(-4)}. Retrying...`);
+            }
+            
+            attempts++;
+            // If we exhausted all attempts, throw
+            if (attempts >= maxAttempts) throw error;
+        }
+    }
+    throw new Error("Max retry attempts reached.");
+}
+
+
+export async function getStashTabs(accountName: string, league: string, sessIds: string[]) {
     try {
         const encodedLeague = encodeURIComponent(league);
         const url = `/api/trade2/search/${encodedLeague}`;
-        console.log(`Searching for seller items: ${client.defaults.baseURL}${url}`);
-        console.log(`Using Account: ${accountName}`);
+        console.log(`Searching for seller items: ${url}`);
+        console.log(`Using Account: ${accountName} with ${sessIds.length} sessions (Round-Robin 5s)`);
         
-        // Try the standard account filter
         let baseQuery: any = {
             query: {
                 status: { option: "any" },
@@ -40,34 +135,36 @@ export async function getStashTabs(accountName: string, league: string, sessId: 
             }
         };
 
-        // Strategy: Fetch Cheapest (Asc), Most Expensive (Desc), and Newest (Indexed Desc)
-        // This covers the edges and the latest activity, maximizing coverage despite the 100-item limit.
         const queryAsc = { ...baseQuery, sort: { price: "asc" } };
         const queryDesc = { ...baseQuery, sort: { price: "desc" } };
         const queryNew = { ...baseQuery, sort: { indexed: "desc" } };
 
         console.log(`[Scan] Fetching items for ${accountName} (Price Asc/Desc + Newest)...`);
 
-        const [resAsc, resDesc, resNew] = await Promise.all([
-            client.post(url, queryAsc).catch(e => ({ data: { result: [], total: 0 }, error: e })),
-            client.post(url, queryDesc).catch(e => ({ data: { result: [], total: 0 }, error: e })),
-            client.post(url, queryNew).catch(e => ({ data: { result: [], total: 0 }, error: e }))
+        // Execute requests in parallel. 
+        // requestWithRotation will manage the waiting/queueing internally to respect 5s limit.
+        
+        const fetchIds = (query: any) => requestWithRotation(sessIds, 'post', url, query).then(res => res.data);
+
+        const [dataAsc, dataDesc, dataNew] = await Promise.all([
+            fetchIds(queryAsc).catch(e => { console.error("Asc Query Failed", e.message); throw e; }),
+            fetchIds(queryDesc).catch(e => { console.error("Desc Query Failed", e.message); throw e; }),
+            fetchIds(queryNew).catch(e => { console.error("New Query Failed", e.message); throw e; })
         ]);
 
         const ids = new Set<string>();
         let totalOnServer = 0;
 
-        // Helper to process results
-        const processRes = (res: any) => {
-            if (res.data && res.data.result) {
-                res.data.result.forEach((id: string) => ids.add(id));
-                if (res.data.total > totalOnServer) totalOnServer = res.data.total;
+        const processData = (data: any) => {
+            if (data && data.result) {
+                data.result.forEach((id: string) => ids.add(id));
+                if (data.total > totalOnServer) totalOnServer = data.total;
             }
         };
 
-        processRes(resAsc);
-        processRes(resDesc);
-        processRes(resNew);
+        processData(dataAsc);
+        processData(dataDesc);
+        processData(dataNew);
 
         // Check for truncation
         if (ids.size < totalOnServer) {
@@ -75,74 +172,74 @@ export async function getStashTabs(accountName: string, league: string, sessId: 
             
             const categories = ['weapon', 'armour', 'accessory', 'jewel', 'card', 'gem', 'flask', 'map', 'currency'];
             
-            for (const cat of categories) {
-                // Construct category-specific query
+            // We can run categories in parallel too because our Rate Limiter handles the queue!
+            // But let's limit concurrency slightly to avoid jamming the queue too much.
+            
+            const categoryPromises = categories.map(async (cat) => {
                 const catQuery = JSON.parse(JSON.stringify(baseQuery));
                 if (!catQuery.query.filters.type_filters) catQuery.query.filters.type_filters = {};
                 if (!catQuery.query.filters.type_filters.filters) catQuery.query.filters.type_filters.filters = {};
                 catQuery.query.filters.type_filters.filters.category = { option: cat };
                 
-                // For each category, we just need "Asc" and "Desc" to cover range. 
-                // "New" is less critical per-category but good if we have capacity.
-                // Let's stick to Asc + Desc to keep request count reasonable (2 per cat).
-                
                 const qAsc = { ...catQuery, sort: { price: "asc" } };
                 const qDesc = { ...catQuery, sort: { price: "desc" } };
-                
+
                 try {
-                    // Run sequentially to avoid rate limits
-                    const [r1, r2] = await Promise.all([
-                        client.post(url, qAsc).catch(e => ({ data: { result: [] } })),
-                        client.post(url, qDesc).catch(e => ({ data: { result: [] } }))
+                    const [d1, d2] = await Promise.all([
+                        fetchIds(qAsc).catch(e => ({ result: [] })), 
+                        fetchIds(qDesc).catch(e => ({ result: [] }))
                     ]);
                     
-                    if (r1.data?.result) r1.data.result.forEach((id: string) => ids.add(id));
-                    if (r2.data?.result) r2.data.result.forEach((id: string) => ids.add(id));
+                    const catIds = new Set<string>();
+                    if (d1?.result) d1.result.forEach((id: string) => catIds.add(id));
+                    if (d2?.result) d2.result.forEach((id: string) => catIds.add(id));
                     
-                    console.log(`[Scan] Category ${cat}: ${ids.size} total items so far...`);
-                    
-                    // Delay to avoid rate limits (2s)
-                    await new Promise(r => setTimeout(r, 2000));
-                    
+                    if (catIds.size > 0) {
+                        console.log(`[Scan] Category ${cat}: found ${catIds.size} items.`);
+                        return Array.from(catIds);
+                    }
                 } catch (err: any) {
-                    console.error(`[Scan] Error scanning category ${cat}:`, err.response?.data || err.message);
+                    console.error(`[Scan] Error scanning category ${cat}:`, err.message);
                 }
-            }
+                return [];
+            });
+
+            const catResults = await Promise.all(categoryPromises);
+            catResults.flat().forEach(id => ids.add(id));
         }
 
         const combinedIds = Array.from(ids);
         console.log(`Found ${combinedIds.length} unique items (Server Total: ${totalOnServer})`);
 
-        if (combinedIds.length === 0) {
-             // Logic to handle fallback if needed, or user must provide full tag in profile
+        if (combinedIds.length === 0 && totalOnServer === 0) {
              if (!accountName.includes('#')) {
-                 console.log(`No items found for ${accountName}. Ensure the profile has the correct account name (e.g. Name#1234).`);
+                 console.log(`No items found for ${accountName}. Ensure the profile has the correct account name.`);
              }
-             return { ids: [], total: 0 };
         }
 
         return { ids: combinedIds, total: totalOnServer };
+
     } catch (error: any) {
-        console.error("Error in search API:", error.response?.status, error.response?.data || error.message);
-        return { ids: [], total: 0 };
+        // CRITICAL: Propagate error so scanner knows it failed.
+        console.error("Error in search API (All attempts failed):", error.message);
+        throw error; 
     }
 }
 
 // Generic Market Search (for trends/analysis)
-export async function searchTrade(league: string, query: any, sessId: string) {
-    const client = createClient(sessId);
+export async function searchTrade(league: string, query: any, sessIds: string[]) {
     try {
         const encodedLeague = encodeURIComponent(league);
         const url = `/api/trade2/search/${encodedLeague}`;
         console.log(`Market Search: ${url}`);
         
-        const response = await client.post(url, query);
+        const response = await requestWithRotation(sessIds, 'post', url, query);
         
         if (response.data && response.data.result) {
             return {
-                id: response.data.id, // The search ID (e.g. "x7m3..."), useful for pagination URL
-                total: response.data.total, // Total results count
-                result: response.data.result // First 100 IDs
+                id: response.data.id, 
+                total: response.data.total, 
+                result: response.data.result
             };
         }
         return null;
@@ -152,9 +249,8 @@ export async function searchTrade(league: string, query: any, sessId: string) {
     }
 }
 
-export async function fetchItemDetails(itemIds: string[], sessId: string) {
+export async function fetchItemDetails(itemIds: string[], sessIds: string[]) {
     if (itemIds.length === 0) return [];
-    const client = createClient(sessId);
     
     // Trade API fetch limit is usually 10 items per call
     const chunks = [];
@@ -163,21 +259,27 @@ export async function fetchItemDetails(itemIds: string[], sessId: string) {
     }
 
     let allItems: any[] = [];
-    for (const chunk of chunks) {
+    
+    // We can run these in parallel too, limited by session availability
+    const chunkPromises = chunks.map(async (chunk) => {
         try {
             const url = `/api/trade2/fetch/${chunk.join(',')}?id=placeholder`; 
-            const response = await client.get(url);
+            const response = await requestWithRotation(sessIds, 'get', url);
+
             if (response.data && response.data.result) {
-                allItems = allItems.concat(response.data.result);
+                return response.data.result;
             }
-            // Sleep 300ms between chunks to respect basic rate limits
-            await new Promise(r => setTimeout(r, 300));
         } catch (error: any) {
-            console.error("Error fetching item details:", error.response?.status, error.response?.data || error.message);
+            console.error("Error fetching item details chunk:", error.response?.status, error.message);
+            return [];
         }
-    }
+        return [];
+    });
+
+    const results = await Promise.all(chunkPromises);
+    results.forEach(res => {
+        allItems = allItems.concat(res);
+    });
+    
     return allItems;
 }
-
-
-

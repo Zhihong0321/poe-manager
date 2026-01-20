@@ -19,11 +19,11 @@ export async function scan(profile: TrackingProfile) {
 
     try {
         // 1. Get IDs of all items listed by seller
-        const { ids: itemIds, total: totalOnServer } = await getStashTabs(profile.accountName, profile.league, profile.sessId);
+        const { ids: itemIds, total: totalOnServer } = await getStashTabs(profile.accountName, profile.league, profile.sessIds);
         
         if (itemIds.length > 0) {
             // 2. Fetch full details for these items
-            const items = await fetchItemDetails(itemIds, profile.sessId);
+            const items = await fetchItemDetails(itemIds, profile.sessIds);
 
             for (const itemResult of items) {
                 const item = itemResult.item;

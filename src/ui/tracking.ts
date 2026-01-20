@@ -1,6 +1,6 @@
 import { renderLayout } from './layout.js';
 
-function parsePrice(note: string): { value: number, currency: 'c' | 'd' | 'unknown' } {
+function parsePrice(note: string): { value: number, currency: 'c' | 'd' | 'ex' | 'unknown' } {
     if (!note) return { value: 0, currency: 'unknown' };
     
     const lower = note.toLowerCase().trim();
@@ -14,8 +14,11 @@ function parsePrice(note: string): { value: number, currency: 'c' | 'd' | 'unkno
         return { value: val, currency: 'd' };
     }
     
-    // Treat "ex", "chaos", "c" as Chaos/Small currency bucket
-    if (lower.includes('chaos') || lower.includes('ex') || /\bc\b/.test(lower)) {
+    if (lower.includes('exalt') || /\bex\b/.test(lower)) {
+        return { value: val, currency: 'ex' };
+    }
+
+    if (lower.includes('chaos') || /\bc\b/.test(lower)) {
         return { value: val, currency: 'c' };
     }
 
@@ -25,12 +28,18 @@ function parsePrice(note: string): { value: number, currency: 'c' | 'd' | 'unkno
 // Helper to define groups and sort items
 function bucketItems(items: any[]) {
     const groups = {
-        g1: { label: '0 ~ 100ex (Chaos)', items: [] as any[], color: '#94a3b8' },
-        g2: { label: '100 ~ 300ex (Chaos)', items: [] as any[], color: '#cbd5e1' },
-        g3: { label: '300 ~ 700ex (Chaos)', items: [] as any[], color: '#e2e8f0' },
+        g1: { label: '0 ~ 100 Chaos', items: [] as any[], color: '#94a3b8' },
+        g2: { label: '100 ~ 300 Chaos', items: [] as any[], color: '#cbd5e1' },
+        g3: { label: '300 ~ 700 Chaos', items: [] as any[], color: '#e2e8f0' },
+        
+        gEx1: { label: '0 ~ 10 Exalted', items: [] as any[], color: '#fdba74' }, // Orange-ish
+        gEx2: { label: '10 ~ 100 Exalted', items: [] as any[], color: '#fb923c' },
+        gEx3: { label: '100+ Exalted', items: [] as any[], color: '#ea580c' },
+
         g4: { label: '1D ~ 2D', items: [] as any[], color: '#facc15' },
         g5: { label: '3D ~ 8D', items: [] as any[], color: '#f59e0b' },
         g6: { label: '8D and above', items: [] as any[], color: '#ef4444' },
+        
         g7: { label: 'Unpriced / Other', items: [] as any[], color: '#64748b' }
     };
 
@@ -43,7 +52,11 @@ function bucketItems(items: any[]) {
             if (value < 100) groups.g1.items.push(s);
             else if (value < 300) groups.g2.items.push(s);
             else if (value <= 700) groups.g3.items.push(s);
-            else groups.g7.items.push(s);
+            else groups.g7.items.push(s); // > 700 Chaos -> Other? Or just keep in g3 or add g3+? Let's put in Unpriced/Other for now or just stick to user buckets
+        } else if (currency === 'ex') {
+            if (value < 10) groups.gEx1.items.push(s);
+            else if (value < 100) groups.gEx2.items.push(s);
+            else groups.gEx3.items.push(s);
         } else if (currency === 'd') {
             if (value < 3) groups.g4.items.push(s); // < 3 covers 1D-2D range
             else if (value < 8) groups.g5.items.push(s); // 3D-8D range
@@ -168,7 +181,7 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
             <form method="POST" action="/profiles/add" class="flex" style="margin-bottom: 20px; background: #0f172a; padding: 15px; border-radius: 6px; border: 1px solid #334155;">
                 <input type="text" name="accountName" placeholder="Account Name (e.g. User#1234)" required style="width: 200px;">
                 <input type="text" name="league" placeholder="League" value="Fate of the Vaal" required style="width: 150px;">
-                <input type="text" name="sessId" placeholder="POESESSID (Cookie)" required style="flex-grow:1;">
+                <input type="text" name="sessId" placeholder="POESESSID (One or more, comma-separated)" required style="flex-grow:1;">
                 <button type="submit">Add Profile</button>
             </form>
 
