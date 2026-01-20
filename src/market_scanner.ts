@@ -93,8 +93,8 @@ function buildQuery(profile: MarketProfile) {
     if (profile.minEs) query.filters.equipment_filters.filters.es = { min: profile.minEs };
 
     const sortMap: any = {
-        'evasion': { 'evasion': 'desc' },
-        'armour': { 'armour': 'desc' },
+        'evasion': { 'ev': 'desc' },
+        'armour': { 'ar': 'desc' },
         'es': { 'es': 'desc' },
         'dps': { 'dps': 'desc' },
         'phys_dps': { 'pdps': 'desc' }
