@@ -263,6 +263,11 @@ export async function removeItem(id: string) {
     await pool.query('DELETE FROM item_snapshots WHERE id = $1', [id]);
 }
 
+export async function clearAllTrackingData() {
+    await pool.query('DELETE FROM item_snapshots');
+    await pool.query('DELETE FROM item_movements');
+}
+
 export async function getAllSnapshots() {
     const res = await pool.query('SELECT * FROM item_snapshots ORDER BY last_seen DESC');
     return res.rows.map(row => ({

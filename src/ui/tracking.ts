@@ -15,6 +15,9 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
                  <form method="POST" action="/tracking/refresh">
                     <button type="submit" style="background: #3b82f6; color: white;">Refresh All</button>
                  </form>
+                 <form method="POST" action="/tracking/clear" onsubmit="return confirm('This will wipe ALL sales history and current listings. Are you sure?');">
+                    <button type="submit" class="danger" style="margin-left: 10px;">Clear All Data</button>
+                 </form>
                  <span style="color: #64748b; font-size: 0.9rem; margin-left: 10px;">Auto-refreshing in background</span>
             </div>
         </div>

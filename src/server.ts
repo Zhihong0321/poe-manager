@@ -3,7 +3,8 @@ import express from 'express';
 import { 
     getSalesHistory, getSetting, setSetting, initDB, addProfile, getProfiles, 
     deleteProfile, toggleProfile, getAllSnapshots, getProfileById,
-    getMarketProfiles, addMarketProfile, deleteMarketProfile, toggleMarketProfile, getMarketSnapshots, getMarketProfileById, updateMarketProfile
+    getMarketProfiles, addMarketProfile, deleteMarketProfile, toggleMarketProfile, getMarketSnapshots, getMarketProfileById, updateMarketProfile,
+    clearAllTrackingData
 } from './db.js';
 import { startMonitor } from './monitor.js';
 import { scan } from './scanner.js';
@@ -160,6 +161,12 @@ app.post('/tracking/refresh', async (req, res) => {
     for (const p of profiles) {
         await scan(p);
     }
+    res.redirect('/tracking');
+});
+
+app.post('/tracking/clear', async (req, res) => {
+    console.log("Clearing all tracking data...");
+    await clearAllTrackingData();
     res.redirect('/tracking');
 });
 
