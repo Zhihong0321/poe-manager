@@ -88,7 +88,7 @@ function buildQuery(profile: MarketProfile) {
         query.filters.misc_filters.filters.quality = { min: profile.minQuality };
     }
 
-    if (profile.minEvasion) query.filters.equipment_filters.filters.evasion = { min: profile.minEvasion };
+    if (profile.minEvasion) query.filters.equipment_filters.filters.ev = { min: profile.minEvasion };
     if (profile.minArmour) query.filters.equipment_filters.filters.ar = { min: profile.minArmour };
     if (profile.minEs) query.filters.equipment_filters.filters.es = { min: profile.minEs };
 
