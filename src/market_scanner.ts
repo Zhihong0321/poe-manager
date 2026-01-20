@@ -19,7 +19,7 @@ export async function runMarketScans() {
     }
 }
 
-async function executeMarketScan(profile: MarketProfile) {
+export async function executeMarketScan(profile: MarketProfile) {
     // We need a session ID. We'll grab the first active tracking profile's sessId 
     // or the user can provide one. For now, we'll try to find any valid sessId.
     const trackingProfiles = await import('./db.js').then(m => m.getActiveProfiles());

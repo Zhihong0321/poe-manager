@@ -3,10 +3,11 @@ import express from 'express';
 import { 
     getSalesHistory, getSetting, setSetting, initDB, addProfile, getProfiles, 
     deleteProfile, toggleProfile, getAllSnapshots, getProfileById,
-    getMarketProfiles, addMarketProfile, deleteMarketProfile, toggleMarketProfile, getMarketSnapshots 
+    getMarketProfiles, addMarketProfile, deleteMarketProfile, toggleMarketProfile, getMarketSnapshots, getMarketProfileById
 } from './db.js';
 import { startMonitor } from './monitor.js';
 import { scan } from './scanner.js';
+import { runMarketScans, executeMarketScan } from './market_scanner.js';
 import { renderDashboard } from './ui/dashboard.js';
 import { renderTracking } from './ui/tracking.js';
 import { renderMarket } from './ui/market.js';
@@ -76,6 +77,16 @@ app.post('/market/profiles/add', async (req, res) => {
 app.post('/market/profiles/toggle', async (req, res) => {
     const { id, isActive } = req.body;
     await toggleMarketProfile(Number(id), isActive === 'true');
+    res.redirect('/market');
+});
+
+app.post('/market/profiles/sync', async (req, res) => {
+    const { id } = req.body;
+    const profile = await getMarketProfileById(Number(id));
+    if (profile) {
+        console.log(`Manual market scan triggered for ${profile.name}`);
+        await executeMarketScan(profile);
+    }
     res.redirect('/market');
 });
 

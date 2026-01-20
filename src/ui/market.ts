@@ -105,6 +105,12 @@ export function renderMarket(profiles: MarketProfile[], snapshotsByProfile: Reco
                                         ${profile.isActive ? 'Deactivate' : 'Activate'}
                                     </button>
                                 </form>
+                                <form action="/market/profiles/sync" method="POST" style="display:inline;">
+                                    <input type="hidden" name="id" value="${profile.id}">
+                                    <button type="submit" style="padding: 5px 10px; font-size: 0.8rem; background: #3b82f6; margin-left: 5px;">
+                                        Run Scan
+                                    </button>
+                                </form>
                                 <form action="/market/profiles/delete" method="POST" style="display:inline;" onsubmit="return confirm('Delete this profile?')">
                                     <input type="hidden" name="id" value="${profile.id}">
                                     <button type="submit" class="danger" style="padding: 5px 10px; font-size: 0.8rem;">Delete</button>
