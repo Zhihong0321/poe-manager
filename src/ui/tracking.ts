@@ -125,7 +125,9 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
                                     ${listed.items.map(s => `
                                         <tr>
                                             <td style="padding: 8px 12px;">
-                                                <div style="font-weight:500;">${s.name || s.typeLine}</div>
+                                                <div style="font-weight:500;">
+                                                    <a href="/item/${s.id}" style="color: inherit; text-decoration: none; border-bottom: 1px dashed #64748b;">${s.name || s.typeLine}</a>
+                                                </div>
                                                 <div style="font-size:0.8rem; color:#64748b;">${s.tabName}</div>
                                             </td>
                                             <td style="padding: 8px 12px; text-align:right;">

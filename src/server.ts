@@ -4,7 +4,7 @@ import {
     getSalesHistory, getSetting, setSetting, initDB, addProfile, getProfiles, 
     deleteProfile, toggleProfile, getAllSnapshots, getProfileById,
     getMarketProfiles, addMarketProfile, deleteMarketProfile, toggleMarketProfile, getMarketSnapshots, getMarketProfileById, updateMarketProfile,
-    clearAllTrackingData, updateProfile
+    clearAllTrackingData, updateProfile, getItem
 } from './db.js';
 import { startMonitor } from './monitor.js';
 import { scan } from './scanner.js';
@@ -13,6 +13,7 @@ import { renderDashboard } from './ui/dashboard.js';
 import { renderTracking } from './ui/tracking.js';
 import { renderMarket } from './ui/market.js';
 import { renderEditProfile } from './ui/edit_profile.js';
+import { renderItemDetails } from './ui/item_details.js';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -23,6 +24,17 @@ app.use(express.urlencoded({ extended: true }));
 
 app.get('/', async (req, res) => {
     res.send(renderDashboard());
+});
+
+app.get('/item/:id', async (req, res) => {
+    try {
+        const item = await getItem(req.params.id);
+        if (!item) return res.status(404).send('Item not found');
+        res.send(renderItemDetails(item));
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Database Error');
+    }
 });
 
 app.get('/tracking', async (req, res) => {
