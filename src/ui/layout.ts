@@ -62,6 +62,27 @@ export function renderLayout(title: string, content: string, activePage: 'dashbo
     <div class="main">
         ${content}
     </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.local-time').forEach(el => {
+                const raw = el.getAttribute('data-time');
+                if (raw) {
+                    const date = new Date(raw);
+                    // Use a nice format: "Jan 19, 10:30 PM"
+                    el.textContent = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                }
+            });
+            
+            document.querySelectorAll('.local-time-short').forEach(el => {
+                const raw = el.getAttribute('data-time');
+                if (raw) {
+                    const date = new Date(raw);
+                    // Short format: "10:30 PM"
+                    el.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                }
+            });
+        });
+    </script>
 </body>
 </html>
     `;

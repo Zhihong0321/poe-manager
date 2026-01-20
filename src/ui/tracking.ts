@@ -82,7 +82,7 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
                             <td>${s.name || s.typeLine}</td>
                             <td class="price">${s.note || 'No Price'}</td>
                             <td class="tab">${s.tabName}</td>
-                            <td style="color:#64748b; font-size:0.8rem;">${new Date(s.lastSeen).toLocaleTimeString()}</td>
+                            <td style="color:#64748b; font-size:0.8rem;"><span class="local-time" data-time="${s.lastSeen}">Loading...</span></td>
                         </tr>
                     `).join('')}
                 </tbody>
@@ -104,7 +104,7 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
                 ${sales.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding: 20px; color: #555;">No sales recorded yet.</td></tr>' : ''}
                 ${sales.map(sale => `
                     <tr>
-                        <td style="color: #94a3b8;">${new Date(sale.timestamp).toLocaleString()}</td>
+                        <td style="color: #94a3b8;"><span class="local-time" data-time="${sale.timestamp}">Loading...</span></td>
                         <td style="font-weight: 500;">${sale.itemName}</td>
                         <td class="price">${sale.price}</td>
                         <td class="tab">${sale.tabName}</td>

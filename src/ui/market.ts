@@ -97,7 +97,7 @@ export function renderMarket(profiles: MarketProfile[], snapshotsByProfile: Reco
                                 </span>
                             </div>
                             <div class="flex">
-                                <span style="font-size: 0.8rem; color: #94a3b8;">Interval: ${profile.intervalMin}m | Last: ${profile.lastRun ? new Date(profile.lastRun).toLocaleTimeString() : 'Never'}</span>
+                                <span style="font-size: 0.8rem; color: #94a3b8;">Interval: ${profile.intervalMin}m | Last: ${profile.lastRun ? `<span class="local-time" data-time="${profile.lastRun}">Loading...</span>` : 'Never'}</span>
                                 <form action="/market/profiles/toggle" method="POST" style="display:inline;">
                                     <input type="hidden" name="id" value="${profile.id}">
                                     <input type="hidden" name="isActive" value="${!profile.isActive}">
@@ -125,7 +125,7 @@ export function renderMarket(profiles: MarketProfile[], snapshotsByProfile: Reco
                                 ${history.map((h, idx) => `
                                     <div style="padding: 10px 15px; font-size: 0.85rem; border-bottom: 1px solid #1e293b; cursor: pointer; ${idx === 0 ? 'background: #1e293b; color: #facc15;' : ''}"
                                          onclick="window.location.href='/market?profileId=${profile.id}&scanId=${h.id}'">
-                                        ${new Date(h.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                        <span class="local-time-short" data-time="${h.timestamp}">Loading...</span>
                                         <span style="float: right; color: #4ade80;">$</span>
                                     </div>
                                 `).join('')}
