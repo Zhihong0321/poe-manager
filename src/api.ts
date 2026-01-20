@@ -73,7 +73,7 @@ export async function getStashTabs(accountName: string, league: string, sessId: 
         if (ids.size < totalOnServer) {
             console.log(`[Scan] Truncation detected (Found ${ids.size} / ${totalOnServer}). initiating Deep Scan by Category...`);
             
-            const categories = ['weapon', 'armour', 'accessory', 'jewel', 'card', 'gem'];
+            const categories = ['weapon', 'armour', 'accessory', 'jewel', 'card', 'gem', 'flask', 'map', 'currency'];
             
             for (const cat of categories) {
                 // Construct category-specific query
@@ -118,13 +118,13 @@ export async function getStashTabs(accountName: string, league: string, sessId: 
              if (!accountName.includes('#')) {
                  console.log(`No items found for ${accountName}. Ensure the profile has the correct account name (e.g. Name#1234).`);
              }
-             return [];
+             return { ids: [], total: 0 };
         }
 
-        return combinedIds;
+        return { ids: combinedIds, total: totalOnServer };
     } catch (error: any) {
         console.error("Error in search API:", error.response?.status, error.response?.data || error.message);
-        return [];
+        return { ids: [], total: 0 };
     }
 }
 
