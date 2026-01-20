@@ -29,8 +29,20 @@ export async function initDB() {
                 note TEXT, 
                 stack_size INTEGER,
                 raw_data JSONB, 
-                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                indexed_at TIMESTAMP
             )
+        `);
+
+        // Migration: Add indexed_at if not exists
+        await client.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_snapshots' AND column_name='indexed_at') THEN
+                    ALTER TABLE item_snapshots ADD COLUMN indexed_at TIMESTAMP;
+                END IF;
+            END
+            $$;
         `);
 
         // Table to record movements (IN/OUT)
@@ -243,14 +255,15 @@ export async function getItem(id: string) {
         note: row.note,
         stackSize: row.stack_size,
         rawData: row.raw_data,
-        lastSeen: row.last_seen
+        lastSeen: row.last_seen,
+        indexedAt: row.indexed_at
     };
 }
 
-export async function saveItem(item: any, tabName: string, tabIndex: number) {
+export async function saveItem(item: any, tabName: string, tabIndex: number, indexedAt?: string) {
     const query = `
-        INSERT INTO item_snapshots (id, name, type_line, tab_name, tab_index, note, stack_size, raw_data, last_seen)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+        INSERT INTO item_snapshots (id, name, type_line, tab_name, tab_index, note, stack_size, raw_data, last_seen, indexed_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, $9)
         ON CONFLICT (id) DO UPDATE SET
             name = EXCLUDED.name,
             type_line = EXCLUDED.type_line,
@@ -259,7 +272,8 @@ export async function saveItem(item: any, tabName: string, tabIndex: number) {
             note = EXCLUDED.note,
             stack_size = EXCLUDED.stack_size,
             raw_data = EXCLUDED.raw_data,
-            last_seen = CURRENT_TIMESTAMP
+            last_seen = CURRENT_TIMESTAMP,
+            indexed_at = COALESCE($9, item_snapshots.indexed_at)
     `;
     const values = [
         item.id,
@@ -269,7 +283,8 @@ export async function saveItem(item: any, tabName: string, tabIndex: number) {
         tabIndex,
         item.note || '',
         item.stackSize || 1,
-        JSON.stringify(item)
+        JSON.stringify(item),
+        indexedAt || null
     ];
     await pool.query(query, values);
 }
@@ -294,7 +309,8 @@ export async function getAllSnapshots() {
         note: row.note,
         stackSize: row.stack_size,
         rawData: row.raw_data,
-        lastSeen: row.last_seen
+        lastSeen: row.last_seen,
+        indexedAt: row.indexed_at
     }));
 }
 

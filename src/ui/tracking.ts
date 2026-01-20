@@ -1,5 +1,22 @@
 import { renderLayout } from './layout.js';
 
+function formatDuration(isoString: string | null): string {
+    if (!isoString) return 'New';
+    const now = new Date();
+    const then = new Date(isoString);
+    const diffMs = now.getTime() - then.getTime();
+    
+    if (diffMs < 0) return 'Just now'; 
+    
+    const minutes = Math.floor(diffMs / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days}d ${hours % 24}h`;
+    if (hours > 0) return `${hours}h ${minutes % 60}m`;
+    return `${minutes}m`;
+}
+
 function parsePrice(note: string): { value: number, currency: 'c' | 'd' | 'ex' | 'unknown' } {
     if (!note) return { value: 0, currency: 'unknown' };
     
@@ -113,7 +130,7 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
                                             </td>
                                             <td style="padding: 8px 12px; text-align:right;">
                                                 <div class="price">${s.note || 'No Price'}</div>
-                                                <div style="font-size:0.75rem; color:#64748b;"><span class="local-time-short" data-time="${s.lastSeen}">Time</span></div>
+                                                <div style="font-size:0.75rem; color:#cbd5e1;">Listed: ${formatDuration(s.indexedAt)}</div>
                                             </td>
                                         </tr>
                                     `).join('')}

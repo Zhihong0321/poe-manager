@@ -33,13 +33,14 @@ export async function scan(profile: TrackingProfile) {
                 const price = item.note || 'No Price';
                 const name = item.name || item.typeLine;
                 const tabName = itemResult.listing?.stash?.name || 'Unknown Tab';
+                const indexedAt = itemResult.listing?.indexed; // ISO Date String
 
                 if (!knownIds.has(itemId)) {
                     await recordMovement(itemId, name, 'LISTED', price, tabName);
                 }
 
                 // Update DB with latest state
-                await saveItem(item, tabName, 0); 
+                await saveItem(item, tabName, 0, indexedAt); 
             }
         }
 
