@@ -323,6 +323,23 @@ export async function recordMovement(itemId: string, name: string, event: 'LISTE
         ];
         await pool.query(query, values);
     }
+
+    export async function updateMarketProfile(id: number, profile: Partial<MarketProfile>) {
+        const query = `
+            UPDATE market_watch_profiles SET
+                name = $1, league = $2, item_category = $3, min_ilvl = $4, max_ilvl = $5,
+                min_req_level = $6, max_req_level = $7, min_quality = $8,
+                min_evasion = $9, min_armour = $10, min_es = $11, sort_by = $12, interval_min = $13
+            WHERE id = $14
+        `;
+        const values = [
+            profile.name, profile.league, profile.itemCategory, profile.minIlvl, profile.maxIlvl,
+            profile.minReqLevel, profile.maxReqLevel, profile.minQuality,
+            profile.minEvasion, profile.minArmour, profile.minEs, profile.sortBy, profile.intervalMin,
+            id
+        ];
+        await pool.query(query, values);
+    }
     
     export async function getMarketProfiles(): Promise<MarketProfile[]> {
         const res = await pool.query('SELECT * FROM market_watch_profiles ORDER BY id ASC');

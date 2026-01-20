@@ -3,7 +3,7 @@ import express from 'express';
 import { 
     getSalesHistory, getSetting, setSetting, initDB, addProfile, getProfiles, 
     deleteProfile, toggleProfile, getAllSnapshots, getProfileById,
-    getMarketProfiles, addMarketProfile, deleteMarketProfile, toggleMarketProfile, getMarketSnapshots, getMarketProfileById
+    getMarketProfiles, addMarketProfile, deleteMarketProfile, toggleMarketProfile, getMarketSnapshots, getMarketProfileById, updateMarketProfile
 } from './db.js';
 import { startMonitor } from './monitor.js';
 import { scan } from './scanner.js';
@@ -57,6 +57,26 @@ app.get('/market', async (req, res) => {
 app.post('/market/profiles/add', async (req, res) => {
     const p = req.body;
     await addMarketProfile({
+        name: p.name,
+        league: p.league,
+        itemCategory: p.itemCategory,
+        minIlvl: p.minIlvl ? parseInt(p.minIlvl) : null,
+        maxIlvl: p.maxIlvl ? parseInt(p.maxIlvl) : null,
+        minReqLevel: p.minReqLevel ? parseInt(p.minReqLevel) : null,
+        maxReqLevel: p.maxReqLevel ? parseInt(p.maxReqLevel) : null,
+        minQuality: p.minQuality ? parseInt(p.minQuality) : null,
+        minEvasion: p.minEvasion ? parseInt(p.minEvasion) : null,
+        minArmour: p.minArmour ? parseInt(p.minArmour) : null,
+        minEs: p.minEs ? parseInt(p.minEs) : null,
+        sortBy: p.sortBy,
+        intervalMin: parseInt(p.intervalMin || '60')
+    });
+    res.redirect('/market');
+});
+
+app.post('/market/profiles/update', async (req, res) => {
+    const p = req.body;
+    await updateMarketProfile(Number(p.id), {
         name: p.name,
         league: p.league,
         itemCategory: p.itemCategory,
