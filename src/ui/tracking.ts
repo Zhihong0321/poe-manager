@@ -178,12 +178,23 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
         <!-- Profiles -->
         <h2>Tracking Profiles</h2>
         <div class="box">
-            <form method="POST" action="/profiles/add" class="flex" style="margin-bottom: 20px; background: #0f172a; padding: 15px; border-radius: 6px; border: 1px solid #334155;">
-                <input type="text" name="accountName" placeholder="Account Name (e.g. User#1234)" required style="width: 200px;">
-                <input type="text" name="league" placeholder="League" value="Fate of the Vaal" required style="width: 150px;">
-                <input type="text" name="sessId" placeholder="POESESSID (One or more, comma-separated)" required style="flex-grow:1;">
-                <button type="submit">Add Profile</button>
-            </form>
+            <div style="margin-bottom: 20px; background: #0f172a; padding: 15px; border-radius: 6px; border: 1px solid #334155;">
+                <h3 style="margin-top:0; font-size:1rem; color:#cbd5e1;">Add New Profile</h3>
+                <form method="POST" action="/profiles/add">
+                    <div style="display:flex; gap: 10px; margin-bottom: 10px;">
+                        <input type="text" name="accountName" placeholder="Account Name (e.g. User#1234)" required style="width: 200px;">
+                        <input type="text" name="league" placeholder="League" value="Fate of the Vaal" required style="width: 150px;">
+                    </div>
+                    
+                    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                        <input type="text" name="sessId_1" placeholder="Cookie #1 (Required)" required>
+                        <input type="text" name="sessId_2" placeholder="Cookie #2 (Optional)">
+                        <input type="text" name="sessId_3" placeholder="Cookie #3 (Optional)">
+                    </div>
+
+                    <button type="submit" style="width: 100%;">Add Profile</button>
+                </form>
+            </div>
 
             <table>
                 <thead>
@@ -202,6 +213,7 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
                             <td>${p.league}</td>
                             <td><span class="${p.isActive ? 'status-active' : 'status-inactive'}">${p.isActive ? 'ACTIVE' : 'PAUSED'}</span></td>
                             <td class="flex" style="border:none; padding: 10px;">
+                                <a href="/profiles/edit/${p.id}" class="button sync" style="background:#64748b; margin-right:5px; text-decoration:none; padding: 5px 10px; font-size: 0.8rem; display: inline-block;">Edit</a>
                                 <form method="POST" action="/profiles/sync">
                                     <input type="hidden" name="id" value="${p.id}">
                                     <button type="submit" class="sync" title="Sync Now">Sync</button>

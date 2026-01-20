@@ -180,6 +180,13 @@ export async function deleteProfile(id: number) {
     await pool.query('DELETE FROM tracking_profiles WHERE id = $1', [id]);
 }
 
+export async function updateProfile(id: number, accountName: string, league: string, sessIds: string[]) {
+    await pool.query(
+        'UPDATE tracking_profiles SET account_name = $1, league = $2, sess_ids = $3 WHERE id = $4',
+        [accountName, league, JSON.stringify(sessIds), id]
+    );
+}
+
 // --- Settings ---
 
 export async function getSetting(key: string): Promise<string | null> {

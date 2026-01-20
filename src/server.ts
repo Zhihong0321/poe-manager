@@ -4,7 +4,7 @@ import {
     getSalesHistory, getSetting, setSetting, initDB, addProfile, getProfiles, 
     deleteProfile, toggleProfile, getAllSnapshots, getProfileById,
     getMarketProfiles, addMarketProfile, deleteMarketProfile, toggleMarketProfile, getMarketSnapshots, getMarketProfileById, updateMarketProfile,
-    clearAllTrackingData
+    clearAllTrackingData, updateProfile
 } from './db.js';
 import { startMonitor } from './monitor.js';
 import { scan } from './scanner.js';
@@ -12,6 +12,7 @@ import { runMarketScans, executeMarketScan } from './market_scanner.js';
 import { renderDashboard } from './ui/dashboard.js';
 import { renderTracking } from './ui/tracking.js';
 import { renderMarket } from './ui/market.js';
+import { renderEditProfile } from './ui/edit_profile.js';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -37,7 +38,19 @@ app.get('/tracking', async (req, res) => {
     }
 });
 
+app.get('/profiles/edit/:id', async (req, res) => {
+    try {
+        const profile = await getProfileById(Number(req.params.id));
+        if (!profile) return res.status(404).send('Profile not found');
+        res.send(renderEditProfile(profile));
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Database Error');
+    }
+});
+
 app.get('/market', async (req, res) => {
+
     try {
         const profiles = await getMarketProfiles();
         const snapshotsByProfile: Record<number, any[]> = {};
@@ -126,11 +139,42 @@ app.post('/settings', async (req, res) => {
 });
 
 app.post('/profiles/add', async (req, res) => {
-    const { accountName, league, sessId } = req.body;
-    if (accountName && league && sessId) {
-        // Parse multiple session IDs (comma or newline separated)
-        const sessIds = sessId.split(/[,\n]+/).map((s: string) => s.trim()).filter((s: string) => s.length > 0);
-        await addProfile(accountName, league, sessIds);
+    const { accountName, league, sessId, sessId_1, sessId_2, sessId_3 } = req.body;
+    
+    // Collect all valid cookies from various input forms
+    const sessIds: string[] = [];
+    
+    // Legacy/Combined Input
+    if (sessId) {
+        sessId.split(/[,\n]+/).forEach((s: string) => {
+            const trimmed = s.trim();
+            if (trimmed) sessIds.push(trimmed);
+        });
+    }
+    
+    // Separate Inputs
+    if (sessId_1 && sessId_1.trim()) sessIds.push(sessId_1.trim());
+    if (sessId_2 && sessId_2.trim()) sessIds.push(sessId_2.trim());
+    if (sessId_3 && sessId_3.trim()) sessIds.push(sessId_3.trim());
+
+    if (accountName && league && sessIds.length > 0) {
+        // Remove duplicates just in case
+        const uniqueIds = Array.from(new Set(sessIds));
+        await addProfile(accountName, league, uniqueIds);
+    }
+    res.redirect('/tracking');
+});
+
+app.post('/profiles/update', async (req, res) => {
+    const { id, accountName, league, sessId_1, sessId_2, sessId_3 } = req.body;
+    
+    const sessIds: string[] = [];
+    if (sessId_1 && sessId_1.trim()) sessIds.push(sessId_1.trim());
+    if (sessId_2 && sessId_2.trim()) sessIds.push(sessId_2.trim());
+    if (sessId_3 && sessId_3.trim()) sessIds.push(sessId_3.trim());
+
+    if (id && accountName && league) {
+        await updateProfile(Number(id), accountName, league, sessIds);
     }
     res.redirect('/tracking');
 });
