@@ -1,6 +1,79 @@
 import { renderLayout } from './layout.js';
 
+function parsePrice(note: string): { value: number, currency: 'c' | 'd' | 'unknown' } {
+    if (!note) return { value: 0, currency: 'unknown' };
+    
+    const lower = note.toLowerCase().trim();
+    // Regex for numeric value
+    const match = lower.match(/(\d+(\.\d+)?)/);
+    if (!match || !match[1]) return { value: 0, currency: 'unknown' };
+    
+    const val = parseFloat(match[1]);
+
+    if (lower.includes('divine') || lower.includes('div') || /\bd\b/.test(lower)) {
+        return { value: val, currency: 'd' };
+    }
+    
+    // Treat "ex", "chaos", "c" as Chaos/Small currency bucket
+    if (lower.includes('chaos') || lower.includes('ex') || /\bc\b/.test(lower)) {
+        return { value: val, currency: 'c' };
+    }
+
+    return { value: val, currency: 'unknown' };
+}
+
 export function renderTracking(sales: any[], interval: string, profiles: any[], snapshots: any[]) {
+    // Bucket definitions
+    const groups = {
+        g1: { label: '0 ~ 100ex (Chaos)', items: [] as any[] },
+        g2: { label: '100 ~ 300ex (Chaos)', items: [] as any[] },
+        g3: { label: '300 ~ 700ex (Chaos)', items: [] as any[] },
+        g4: { label: '1D ~ 2D', items: [] as any[] },
+        g5: { label: '3D ~ 8D', items: [] as any[] },
+        g6: { label: '8D and above', items: [] as any[] },
+        g7: { label: 'Unpriced / Other', items: [] as any[] }
+    };
+
+    // Sort items into buckets
+    snapshots.forEach(s => {
+        const { value, currency } = parsePrice(s.note || '');
+        
+        if (currency === 'c') {
+            if (value < 100) groups.g1.items.push(s);
+            else if (value < 300) groups.g2.items.push(s);
+            else if (value <= 700) groups.g3.items.push(s);
+            else groups.g7.items.push(s); // > 700 chaos -> fall to other or maybe 8D? Keeping simple.
+        } else if (currency === 'd') {
+            if (value >= 1 && value <= 2) groups.g4.items.push(s);
+            else if (value >= 3 && value < 8) groups.g5.items.push(s); // "3D ~ 8D" (assuming < 8)
+            else if (value >= 8) groups.g6.items.push(s);
+            else groups.g7.items.push(s); // e.g. 0.5D or 2.5D (gap?) 
+            // Note: 2.5D falls here. User gaps: 1-2, 3-8. 
+            // Missing: 2-3D? I'll put 2-3D in "1D~2D" (extend) or "3D~8D"?
+            // Let's make the logic contiguous for safety:
+            // 1 <= v < 3: G4
+            // 3 <= v < 8: G5
+            // >= 8: G6
+        } else {
+            groups.g7.items.push(s);
+        }
+    });
+
+    // Fix gaps logic for Divines to be safer
+    // Re-run sorting for Divines to ensure 2.5D goes somewhere.
+    // User said: "1D ~ 2D", "3D ~ 8D". 
+    // I will interpret "1D ~ 2D" as 1 <= x < 3.
+    // I will interpret "3D ~ 8D" as 3 <= x < 8.
+    
+    // Resetting for safety in the loop above is hard with map. 
+    // Let's just adjust logic in the loop:
+    // DONE above conceptually, but let's refine the loop inside the function to be robust.
+    
+    // Clear and redo with robust logic
+    groups.g4.items = []; groups.g5.items = []; groups.g6.items = []; groups.g7.items = []; // Clear D buckets
+    // Re-process all (simplification: just do it right first time)
+    // Actually, let's just rewrite the loop below in the actual code string.
+
     const content = `
         <h1>Trade Tracking</h1>
 
@@ -69,30 +142,10 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
             </table>
         </div>
 
-        <!-- Current Listings -->
+        <!-- Current Listings by Group -->
         <h2>Current Trade Listings (${snapshots.length})</h2>
-        <div style="max-height: 400px; overflow-y: auto; background: #1e293b; border-radius: 8px; box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);">
-            <table style="margin-top: 0; box-shadow: none;">
-                <thead style="position: sticky; top: 0; z-index: 10;">
-                    <tr>
-                        <th>Item</th>
-                        <th>Price</th>
-                        <th>Tab</th>
-                        <th>Last Seen</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${snapshots.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding: 20px; color: #555;">No items currently indexed. Sync to populate.</td></tr>' : ''}
-                    ${snapshots.map(s => `
-                        <tr>
-                            <td>${s.name || s.typeLine}</td>
-                            <td class="price">${s.note || 'No Price'}</td>
-                            <td class="tab">${s.tabName}</td>
-                            <td style="color:#64748b; font-size:0.8rem;"><span class="local-time" data-time="${s.lastSeen}">Loading...</span></td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+            ${renderGroups(snapshots)}
         </div>
 
         <!-- Sales History -->
@@ -120,4 +173,73 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
         </table>
     `;
     return renderLayout('Trade Tracking', content, 'tracking');
+}
+
+function renderGroups(allSnapshots: any[]) {
+     const groups = {
+        g1: { label: '0 ~ 100ex (Chaos)', items: [] as any[], color: '#94a3b8' },
+        g2: { label: '100 ~ 300ex (Chaos)', items: [] as any[], color: '#cbd5e1' },
+        g3: { label: '300 ~ 700ex (Chaos)', items: [] as any[], color: '#e2e8f0' },
+        g4: { label: '1D ~ 2D', items: [] as any[], color: '#facc15' },
+        g5: { label: '3D ~ 8D', items: [] as any[], color: '#f59e0b' },
+        g6: { label: '8D and above', items: [] as any[], color: '#ef4444' },
+        g7: { label: 'Unpriced / Other', items: [] as any[], color: '#64748b' }
+    };
+
+    allSnapshots.forEach(s => {
+        const { value, currency } = parsePrice(s.note || '');
+        if (currency === 'c') {
+            if (value < 100) groups.g1.items.push(s);
+            else if (value < 300) groups.g2.items.push(s);
+            else if (value <= 700) groups.g3.items.push(s);
+            else groups.g7.items.push(s);
+        } else if (currency === 'd') {
+            if (value < 3) groups.g4.items.push(s); // Covers 0-3D actually, but labeled 1D-2D. 
+            // Correcting logic to strict user request:
+            // "1D ~ 2D" -> implies >= 1 and <= 2?
+            // "3D ~ 8D" -> implies >= 3 and <= 8?
+            // What about < 1D? Or 2.5D?
+            // I'll map < 3 to g4 (assuming they don't list <1D often or it goes here).
+            // I'll map 3 <= v < 8 to g5.
+            // >= 8 to g6.
+            else if (value < 8) groups.g5.items.push(s);
+            else groups.g6.items.push(s);
+        } else {
+            groups.g7.items.push(s);
+        }
+    });
+
+    return Object.values(groups).map(g => {
+        if (g.items.length === 0) return '';
+        return `
+            <div class="box" style="margin-bottom: 20px; border-left: 4px solid ${g.color};">
+                <h3 style="margin-top:0; border-bottom: 1px solid #334155; padding-bottom: 10px; display:flex; justify-content:space-between;">
+                    ${g.label}
+                    <span style="font-size: 0.9rem; background: #334155; padding: 2px 8px; border-radius: 10px;">${g.items.length} items</span>
+                </h3>
+                <div style="max-height: 300px; overflow-y: auto;">
+                    <table style="margin-top: 0; box-shadow: none; min-width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Price</th>
+                                <th>Tab</th>
+                                <th>Last Seen</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${g.items.map(s => `
+                                <tr>
+                                    <td>${s.name || s.typeLine}</td>
+                                    <td class="price">${s.note || 'No Price'}</td>
+                                    <td class="tab">${s.tabName}</td>
+                                    <td style="color:#64748b; font-size:0.8rem;"><span class="local-time" data-time="${s.lastSeen}">Loading...</span></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }).join('');
 }

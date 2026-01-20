@@ -2,7 +2,7 @@ import { renderLayout } from './layout.js';
 import {} from '../db.js';
 export function renderMarket(profiles, snapshotsByProfile) {
     const categories = [
-        { label: 'Body Armour', value: 'armour.body' },
+        { label: 'Body Armour', value: 'armour.chest' },
         { label: 'Boots', value: 'armour.boots' },
         { label: 'Gloves', value: 'armour.gloves' },
         { label: 'Helmet', value: 'armour.helmet' },
@@ -16,31 +16,32 @@ export function renderMarket(profiles, snapshotsByProfile) {
         <div class="flex" style="justify-content: space-between; align-items: flex-end;">
             <h1>Market Watch</h1>
             <div style="margin-bottom: 10px;">
-                <button onclick="document.getElementById('add-market-form').style.display='block'">+ Create Search Profile</button>
+                <button onclick="openCreateForm()">+ Create Search Profile</button>
             </div>
         </div>
 
         <div id="add-market-form" class="box" style="display: none; border-left: 4px solid #facc15;">
-            <h2>Create New Search Profile</h2>
-            <form action="/market/profiles/add" method="POST">
+            <h2 id="form-title">Create New Search Profile</h2>
+            <form id="market-form" action="/market/profiles/add" method="POST">
+                <input type="hidden" name="id" id="form-id">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                     <div>
                         <label>Profile Name</label><br>
-                        <input type="text" name="name" placeholder="e.g. High Eva Body" required style="width: 100%;">
+                        <input type="text" name="name" id="form-name" placeholder="e.g. High Eva Body" required style="width: 100%;">
                     </div>
                     <div>
                         <label>League</label><br>
-                        <input type="text" name="league" value="Standard" required style="width: 100%;">
+                        <input type="text" name="league" id="form-league" value="Standard" required style="width: 100%;">
                     </div>
                     <div>
                         <label>Category</label><br>
-                        <select name="itemCategory" style="width: 100%;">
+                        <select name="itemCategory" id="form-category" style="width: 100%;">
                             ${categories.map(c => `<option value="${c.value}">${c.label}</option>`).join('')}
                         </select>
                     </div>
                     <div>
                         <label>Sort By</label><br>
-                        <select name="sortBy" style="width: 100%;">
+                        <select name="sortBy" id="form-sort" style="width: 100%;">
                             <option value="evasion">Evasion</option>
                             <option value="armour">Armour</option>
                             <option value="es">Energy Shield</option>
@@ -50,32 +51,78 @@ export function renderMarket(profiles, snapshotsByProfile) {
                     </div>
                     <div>
                         <label>Interval (mins)</label><br>
-                        <input type="number" name="intervalMin" value="60" style="width: 100%;">
+                        <input type="number" name="intervalMin" id="form-interval" value="60" style="width: 100%;">
                     </div>
                 </div>
 
                 <h3 style="margin-top: 20px; font-size: 0.9rem; color: #94a3b8;">Item Level & Requirements</h3>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 15px;">
-                    <input type="number" name="minIlvl" placeholder="Min iLvl">
-                    <input type="number" name="maxIlvl" placeholder="Max iLvl">
-                    <input type="number" name="minReqLevel" placeholder="Min Req Lvl">
-                    <input type="number" name="maxReqLevel" placeholder="Max Req Lvl">
-                    <input type="number" name="minQuality" placeholder="Min Quality">
+                    <input type="number" name="minIlvl" id="form-minIlvl" placeholder="Min iLvl">
+                    <input type="number" name="maxIlvl" id="form-maxIlvl" placeholder="Max iLvl">
+                    <input type="number" name="minReqLevel" id="form-minReqLevel" placeholder="Min Req Lvl">
+                    <input type="number" name="maxReqLevel" id="form-maxReqLevel" placeholder="Max Req Lvl">
+                    <input type="number" name="minQuality" id="form-minQuality" placeholder="Min Quality">
                 </div>
 
                 <h3 style="margin-top: 20px; font-size: 0.9rem; color: #94a3b8;">Minimum Stats</h3>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px;">
-                    <input type="number" name="minEvasion" placeholder="Min Evasion">
-                    <input type="number" name="minArmour" placeholder="Min Armour">
-                    <input type="number" name="minEs" placeholder="Min ES">
+                    <input type="number" name="minEvasion" id="form-minEvasion" placeholder="Min Evasion">
+                    <input type="number" name="minArmour" id="form-minArmour" placeholder="Min Armour">
+                    <input type="number" name="minEs" id="form-minEs" placeholder="Min ES">
                 </div>
 
                 <div style="margin-top: 20px; display: flex; gap: 10px;">
-                    <button type="submit">Save Profile</button>
+                    <button type="submit" id="form-submit">Save Profile</button>
                     <button type="button" class="danger" onclick="document.getElementById('add-market-form').style.display='none'">Cancel</button>
                 </div>
             </form>
         </div>
+
+        <script>
+            function openCreateForm() {
+                document.getElementById('add-market-form').style.display = 'block';
+                document.getElementById('form-title').textContent = 'Create New Search Profile';
+                document.getElementById('market-form').action = '/market/profiles/add';
+                document.getElementById('form-submit').textContent = 'Save Profile';
+                
+                // Reset fields
+                document.getElementById('form-id').value = '';
+                document.getElementById('form-name').value = '';
+                document.getElementById('form-league').value = 'Standard';
+                document.getElementById('form-category').selectedIndex = 0;
+                document.getElementById('form-sort').selectedIndex = 0;
+                document.getElementById('form-interval').value = '60';
+                
+                // Reset optionals
+                ['minIlvl', 'maxIlvl', 'minReqLevel', 'maxReqLevel', 'minQuality', 'minEvasion', 'minArmour', 'minEs']
+                    .forEach(id => document.getElementById('form-' + id).value = '');
+            }
+
+            function editProfile(profile) {
+                document.getElementById('add-market-form').style.display = 'block';
+                document.getElementById('form-title').textContent = 'Edit Search Profile';
+                document.getElementById('market-form').action = '/market/profiles/update';
+                document.getElementById('form-submit').textContent = 'Update Profile';
+                
+                document.getElementById('form-id').value = profile.id;
+                document.getElementById('form-name').value = profile.name;
+                document.getElementById('form-league').value = profile.league;
+                document.getElementById('form-category').value = profile.itemCategory;
+                document.getElementById('form-sort').value = profile.sortBy;
+                document.getElementById('form-interval').value = profile.intervalMin;
+                
+                document.getElementById('form-minIlvl').value = profile.minIlvl || '';
+                document.getElementById('form-maxIlvl').value = profile.maxIlvl || '';
+                document.getElementById('form-minReqLevel').value = profile.minReqLevel || '';
+                document.getElementById('form-maxReqLevel').value = profile.maxReqLevel || '';
+                document.getElementById('form-minQuality').value = profile.minQuality || '';
+                document.getElementById('form-minEvasion').value = profile.minEvasion || '';
+                document.getElementById('form-minArmour').value = profile.minArmour || '';
+                document.getElementById('form-minEs').value = profile.minEs || '';
+                
+                window.scrollTo(0, 0);
+            }
+        </script>
 
         <div style="margin-top: 20px;">
             ${profiles.length === 0 ? '<p class="box">No market profiles created yet.</p>' : ''}
@@ -94,12 +141,21 @@ export function renderMarket(profiles, snapshotsByProfile) {
                                 </span>
                             </div>
                             <div class="flex">
-                                <span style="font-size: 0.8rem; color: #94a3b8;">Interval: ${profile.intervalMin}m | Last: ${profile.lastRun ? new Date(profile.lastRun).toLocaleTimeString() : 'Never'}</span>
+                                <span style="font-size: 0.8rem; color: #94a3b8;">Interval: ${profile.intervalMin}m | Last: ${profile.lastRun ? `<span class="local-time" data-time="${profile.lastRun}">Loading...</span>` : 'Never'}</span>
+                                
+                                <button type="button" onclick='editProfile(${JSON.stringify(profile)})' style="padding: 5px 10px; font-size: 0.8rem; background: #64748b; margin-right: 5px;">Edit</button>
+
                                 <form action="/market/profiles/toggle" method="POST" style="display:inline;">
                                     <input type="hidden" name="id" value="${profile.id}">
                                     <input type="hidden" name="isActive" value="${!profile.isActive}">
                                     <button type="submit" class="toggle" style="padding: 5px 10px; font-size: 0.8rem;">
                                         ${profile.isActive ? 'Deactivate' : 'Activate'}
+                                    </button>
+                                </form>
+                                <form action="/market/profiles/sync" method="POST" style="display:inline;">
+                                    <input type="hidden" name="id" value="${profile.id}">
+                                    <button type="submit" style="padding: 5px 10px; font-size: 0.8rem; background: #3b82f6; margin-left: 5px;">
+                                        Run Scan
                                     </button>
                                 </form>
                                 <form action="/market/profiles/delete" method="POST" style="display:inline;" onsubmit="return confirm('Delete this profile?')">
@@ -116,7 +172,7 @@ export function renderMarket(profiles, snapshotsByProfile) {
                                 ${history.map((h, idx) => `
                                     <div style="padding: 10px 15px; font-size: 0.85rem; border-bottom: 1px solid #1e293b; cursor: pointer; ${idx === 0 ? 'background: #1e293b; color: #facc15;' : ''}"
                                          onclick="window.location.href='/market?profileId=${profile.id}&scanId=${h.id}'">
-                                        ${new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        <span class="local-time-short" data-time="${h.timestamp}">Loading...</span>
                                         <span style="float: right; color: #4ade80;">$</span>
                                     </div>
                                 `).join('')}
