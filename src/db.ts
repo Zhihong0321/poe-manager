@@ -240,8 +240,7 @@ export async function setSetting(key: string, value: string) {
 }
 
 export async function getSalesHistory(accountName?: string, league?: string) {
-    let query = 'SELECT * FROM item_movements WHERE event_str = \'SOLD\'
-';
+    let query = "SELECT * FROM item_movements WHERE event_str = 'SOLD'";
     const values: any[] = [];
     
     if (accountName && league) {
