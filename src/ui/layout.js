@@ -129,11 +129,70 @@ export function renderLayout(title, content, activePage) {
     <div class="main">
         ${content}
     </div>
+
+    <!-- Status Terminal Popup -->
+    <div id="status-terminal" style="position: fixed; bottom: 20px; right: 20px; width: 350px; background: #0f172a; border: 1px solid #facc15; border-radius: 4px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 3000; display: none; overflow: hidden; flex-direction: column;">
+        <div style="background: #1e293b; padding: 8px 12px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 0.75rem; color: #facc15; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">📡 API Live Status</span>
+            <button onclick="document.getElementById('status-terminal').style.display='none'" style="background: transparent; border: none; color: #475569; padding: 0; min-width: auto; cursor: pointer;">✕</button>
+        </div>
+        <div id="status-logs" style="height: 200px; overflow-y: auto; padding: 10px; font-family: 'Consolas', 'Monaco', monospace; font-size: 0.75rem; display: flex; flex-direction: column; gap: 4px;">
+            <!-- Logs appear here -->
+        </div>
+        <div style="background: #1e293b; padding: 5px 12px; border-top: 1px solid #334155; font-size: 0.65rem; color: #475569;">
+            Active Sync in progress...
+        </div>
+    </div>
+
     <script>
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('open');
             document.querySelector('.overlay').classList.toggle('open');
         }
+
+        // SSE Client
+        const statusTerminal = document.getElementById('status-terminal');
+        const statusLogs = document.getElementById('status-logs');
+        let hideTimeout = null;
+
+        function addLog(message, type) {
+            statusTerminal.style.display = 'flex';
+            
+            const logEntry = document.createElement('div');
+            logEntry.style.borderLeft = '2px solid transparent';
+            logEntry.style.paddingLeft = '8px';
+            
+            let color = '#94a3b8';
+            if (type === 'wait') { color = '#facc15'; logEntry.style.borderColor = '#facc15'; }
+            if (type === 'success') { color = '#4ade80'; logEntry.style.borderColor = '#4ade80'; }
+            if (type === 'error') { color = '#ef4444'; logEntry.style.borderColor = '#ef4444'; }
+            
+            logEntry.innerHTML = \`<span style="color: #475569;">[\${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})}]</span> <span style="color: \${color}">\${message}</span>\`;
+            statusLogs.appendChild(logEntry);
+            
+            // Auto-scroll
+            statusLogs.scrollTop = statusLogs.scrollHeight;
+
+            // Remove old logs if too many
+            if (statusLogs.children.length > 50) statusLogs.removeChild(statusLogs.firstChild);
+
+            // Auto-hide after 15 seconds of inactivity
+            if (hideTimeout) clearTimeout(hideTimeout);
+            hideTimeout = setTimeout(() => {
+                // Only hide if not "waiting"
+                if (type !== 'wait') statusTerminal.style.display = 'none';
+            }, 15000);
+        }
+
+        const eventSource = new EventSource('/api/status-stream');
+        eventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            addLog(data.message, data.type);
+        };
+
+        eventSource.onerror = () => {
+            console.error("SSE Connection lost. Retrying...");
+        };
 
         document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.local-time').forEach(el => {

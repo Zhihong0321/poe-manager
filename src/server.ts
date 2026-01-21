@@ -14,11 +14,31 @@ import { renderTracking } from './ui/tracking.js';
 import { renderMarket } from './ui/market.js';
 import { renderEditProfile } from './ui/edit_profile.js';
 import { renderItemDetails } from './ui/item_details.js';
+import { statusBus } from './status_bus.js';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
 app.use(express.urlencoded({ extended: true }));
+
+// --- API Routes ---
+
+app.get('/api/status-stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const onLog = (data: any) => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    statusBus.on('log', onLog);
+
+    req.on('close', () => {
+        statusBus.off('log', onLog);
+    });
+});
 
 // --- Page Routes ---
 

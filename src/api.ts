@@ -1,5 +1,6 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
+import { statusBus } from './status_bus.js';
 
 dotenv.config();
 
@@ -56,7 +57,7 @@ async function getNextAvailableSession(sessIds: string[]): Promise<string> {
         // 3. If none ready, wait
         const waitTime = earliestReadyTime - now;
         if (waitTime > 0) {
-            // console.log(`[RateLimit] All sessions on cooldown. Waiting ${Math.ceil(waitTime/1000)}s...`);
+            statusBus.log(`Waiting ${Math.ceil(waitTime/1000)}s for cookie cooldown...`, 'wait');
             await new Promise(r => setTimeout(r, Math.min(waitTime, 1000))); // Check every 1s or exact time
         } else {
              // Should not happen if logic is correct, but safe fallback
@@ -83,27 +84,26 @@ async function requestWithRotation(
         const client = createClient(sessId);
 
         try {
+            statusBus.log(`Sending API Request to ${url.split('?')[0]}...`, 'info');
+            let response;
             if (method === 'get') {
-                return await client.get(url);
+                response = await client.get(url);
             } else {
-                return await client.post(url, data);
+                response = await client.post(url, data);
             }
+            statusBus.log(`API Success: ${url.split('?')[0]}`, 'success');
+            return response;
         } catch (error: any) {
             const status = error.response?.status;
             
             if (status === 429) {
-                console.warn(`[API] Rate Limit (429) on session ...${sessId.slice(-4)}. Penalizing 60s.`);
+                statusBus.log(`Rate Limited (429)! Penalizing session.`, 'error');
                 sessionCooldowns.set(sessId, Date.now() + RATE_LIMIT_PENALTY_MS);
             } else if (status === 403 || status === 401) {
-                console.warn(`[API] Auth/Forbidden (${status}) on session ...${sessId.slice(-4)}. Skipping for this run.`);
-                // Effectively remove from rotation for a long time or until restart
+                statusBus.log(`Auth Error (${status}). Skipping cookie.`, 'error');
                 sessionCooldowns.set(sessId, Date.now() + 3600000); 
             } else {
-                // Other errors (500, network) -> Throw or Retry?
-                // For "Sold" detection safety, we treat network errors as fatal for this request usually,
-                // but here we might want to try another session just in case it's a specific route issue?
-                // Let's retry with another session just to be safe.
-                console.warn(`[API] Error ${status} on session ...${sessId.slice(-4)}. Retrying...`);
+                statusBus.log(`Request Failed (${status}). Retrying...`, 'error');
             }
             
             attempts++;
