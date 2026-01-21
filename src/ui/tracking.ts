@@ -17,7 +17,7 @@ function formatDuration(isoString: string | null): string {
     return `${minutes}m`;
 }
 
-function parsePrice(note: string): { value: number, currency: 'c' | 'd' | 'ex' | 'unknown' } {
+export function parsePrice(note: string): { value: number, currency: 'c' | 'd' | 'ex' | 'unknown' } {
     if (!note) return { value: 0, currency: 'unknown' };
     
     const lower = note.toLowerCase().trim();
@@ -45,22 +45,22 @@ function parsePrice(note: string): { value: number, currency: 'c' | 'd' | 'ex' |
 // Helper to define groups and sort items
 function bucketItems(items: any[]) {
     const groups = {
-        g1: { label: '0 ~ 100 Chaos', items: [] as any[], color: '#94a3b8' },
-        g2: { label: '100 ~ 300 Chaos', items: [] as any[], color: '#cbd5e1' },
-        g3: { label: '300 ~ 800 Chaos', items: [] as any[], color: '#e2e8f0' },
+        g1: { label: '0 ~ 100 Chaos', items: [] as any[], color: '#94a3b8', currency: 'chaos', min: 0, max: 100 },
+        g2: { label: '100 ~ 300 Chaos', items: [] as any[], color: '#cbd5e1', currency: 'chaos', min: 101, max: 300 },
+        g3: { label: '300 ~ 800 Chaos', items: [] as any[], color: '#e2e8f0', currency: 'chaos', min: 301, max: 800 },
         
-        gEx1: { label: '0 ~ 20 Exalted', items: [] as any[], color: '#fdba74' }, 
-        gEx2: { label: '20 ~ 100 Exalted', items: [] as any[], color: '#fb923c' },
-        gEx3: { label: '100 ~ 200 Exalted', items: [] as any[], color: '#ea580c' },
-        gEx4: { label: '200+ Exalted', items: [] as any[], color: '#991b1b' },
+        gEx1: { label: '0 ~ 20 Exalted', items: [] as any[], color: '#fdba74', currency: 'ex', min: 0, max: 20 }, 
+        gEx2: { label: '20 ~ 100 Exalted', items: [] as any[], color: '#fb923c', currency: 'ex', min: 21, max: 100 },
+        gEx3: { label: '100 ~ 200 Exalted', items: [] as any[], color: '#ea580c', currency: 'ex', min: 101, max: 200 },
+        gEx4: { label: '200+ Exalted', items: [] as any[], color: '#991b1b', currency: 'ex', min: 201, max: undefined },
 
-        g4: { label: '1D ~ 2D', items: [] as any[], color: '#facc15' },
-        g5: { label: '3D ~ 5D', items: [] as any[], color: '#f59e0b' },
-        g6: { label: '6D ~ 10D', items: [] as any[], color: '#d97706' },
-        g7: { label: '11D ~ 25D', items: [] as any[], color: '#b45309' },
-        g8: { label: '26D and above', items: [] as any[], color: '#ef4444' },
+        g4: { label: '1D ~ 2D', items: [] as any[], color: '#facc15', currency: 'd', min: 0, max: 2.9 },
+        g5: { label: '3D ~ 5D', items: [] as any[], color: '#f59e0b', currency: 'd', min: 3, max: 5 },
+        g6: { label: '6D ~ 10D', items: [] as any[], color: '#d97706', currency: 'd', min: 6, max: 10 },
+        g7: { label: '11D ~ 25D', items: [] as any[], color: '#b45309', currency: 'd', min: 11, max: 25 },
+        g8: { label: '26D and above', items: [] as any[], color: '#ef4444', currency: 'd', min: 26, max: undefined },
         
-        g9: { label: 'Unpriced / Other', items: [] as any[], color: '#64748b' }
+        g9: { label: 'Unpriced / Other', items: [] as any[], color: '#64748b', currency: 'unknown', min: undefined, max: undefined }
     };
 
     items.forEach(s => {
@@ -117,8 +117,17 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
         return `
             <div style="margin-bottom: 0; border-left: 4px solid ${listed.color}; border-bottom: 1px solid #334155; background: #1e293b;">
                 <!-- Header -->
-                <div style="padding: 12px 20px; background: rgba(0,0,0,0.3); border-bottom: 1px solid #334155;">
-                    <h3 style="margin: 0; color: ${listed.color}; text-transform: uppercase; font-size: 0.9rem; letter-spacing: 1px;">${listed.label}</h3>
+                <div style="padding: 12px 20px; background: rgba(0,0,0,0.3); border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="margin: 0; color: ${listed.color}; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px;">${listed.label}</h3>
+                    
+                    ${listed.currency !== 'unknown' ? `
+                        <form method="POST" action="/tracking/refresh-group">
+                            <input type="hidden" name="currency" value="${listed.currency}">
+                            <input type="hidden" name="min" value="${listed.min}">
+                            <input type="hidden" name="max" value="${listed.max}">
+                            <button type="submit" style="padding: 4px 12px; font-size: 0.65rem; background: transparent; border: 1px solid ${listed.color}; color: ${listed.color}; border-radius: 2px;">Refresh Group</button>
+                        </form>
+                    ` : ''}
                 </div>
 
                 <!-- 2-Column Layout -->

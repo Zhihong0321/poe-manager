@@ -229,6 +229,24 @@ app.post('/tracking/refresh', async (req, res) => {
     res.redirect('/tracking');
 });
 
+app.post('/tracking/refresh-group', async (req, res) => {
+    const { currency, min, max } = req.body;
+    console.log(`Manual price group refresh triggered: ${currency} (${min}-${max})`);
+    
+    const profiles = await import('./db.js').then(m => m.getActiveProfiles());
+    const { scanPriceGroup } = await import('./scanner.js');
+
+    for (const p of profiles) {
+        await scanPriceGroup(
+            p, 
+            currency, 
+            min === 'undefined' ? undefined : Number(min), 
+            max === 'undefined' ? undefined : Number(max)
+        );
+    }
+    res.redirect('/tracking');
+});
+
 app.post('/tracking/clear', async (req, res) => {
     console.log("Clearing all tracking data...");
     await clearAllTrackingData();

@@ -115,6 +115,52 @@ async function requestWithRotation(
 }
 
 
+export async function getStashTabsByPrice(accountName: string, league: string, sessIds: string[], currency: string, min?: number, max?: number) {
+    try {
+        const encodedLeague = encodeURIComponent(league);
+        const url = `/api/trade2/search/${encodedLeague}`;
+        
+        let priceFilter: any = { option: currency };
+        if (min !== undefined) priceFilter.min = min;
+        if (max !== undefined) priceFilter.max = max;
+
+        let baseQuery: any = {
+            query: {
+                status: { option: "any" },
+                filters: {
+                    trade_filters: {
+                        filters: {
+                            account: { input: accountName },
+                            price: priceFilter
+                        }
+                    }
+                }
+            }
+        };
+
+        const fetchIds = (query: any) => requestWithRotation(sessIds, 'post', url, query).then(res => res.data);
+
+        console.log(`[PriceScan] Fetching ${currency} (${min}-${max}) for ${accountName}...`);
+
+        const [dataAsc, dataDesc] = await Promise.all([
+            fetchIds({ ...baseQuery, sort: { price: "asc" } }).catch(e => ({ result: [] })),
+            fetchIds({ ...baseQuery, sort: { price: "desc" } }).catch(e => ({ result: [] }))
+        ]);
+
+        const ids = new Set<string>();
+        let total = 0;
+
+        if (dataAsc?.result) dataAsc.result.forEach((id: string) => ids.add(id));
+        if (dataDesc?.result) dataDesc.result.forEach((id: string) => ids.add(id));
+        if (dataAsc?.total > total) total = dataAsc.total;
+
+        return { ids: Array.from(ids), total };
+    } catch (error: any) {
+        console.error("Error in Price Group search:", error.message);
+        throw error;
+    }
+}
+
 export async function getStashTabs(accountName: string, league: string, sessIds: string[]) {
     try {
         const encodedLeague = encodeURIComponent(league);
