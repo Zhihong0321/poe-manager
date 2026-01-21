@@ -170,7 +170,13 @@ export async function getStashTabs(accountName: string, league: string, sessIds:
         if (ids.size < totalOnServer) {
             console.log(`[Scan] Truncation detected (Found ${ids.size} / ${totalOnServer}). initiating Deep Scan by Category...`);
             
-            const categories = ['weapon', 'armour', 'accessory', 'jewel', 'card', 'gem', 'flask', 'map', 'currency'];
+            // Expanded categories for more granular discovery
+            const categories = [
+                'weapon', 'weapon.one', 'weapon.onehand', 'weapon.twohand', 'weapon.bow', 'weapon.claw', 'weapon.dagger', 'weapon.runedagger', 'weapon.oneaxe', 'weapon.twoaxe', 'weapon.onemace', 'weapon.twomace', 'weapon.onesword', 'weapon.twosword', 'weapon.sceptre', 'weapon.staff', 'weapon.warstaff', 'weapon.wand', 'weapon.rod',
+                'armour', 'armour.chest', 'armour.boots', 'armour.gloves', 'armour.helmet', 'armour.shield', 'armour.quiver',
+                'accessory', 'accessory.amulet', 'accessory.belt', 'accessory.ring',
+                'jewel', 'card', 'gem', 'flask', 'map', 'currency', 'heistequipment', 'heistmission', 'logbook', 'sentinel', 'memory'
+            ];
             
             // We can run categories in parallel too because our Rate Limiter handles the queue!
             // But let's limit concurrency slightly to avoid jamming the queue too much.

@@ -69,15 +69,15 @@ function bucketItems(items: any[]) {
             if (value < 100) groups.g1.items.push(s);
             else if (value < 300) groups.g2.items.push(s);
             else if (value <= 700) groups.g3.items.push(s);
-            else groups.g7.items.push(s); // > 700 Chaos -> Other? Or just keep in g3 or add g3+? Let's put in Unpriced/Other for now or just stick to user buckets
+            else groups.g7.items.push(s);
         } else if (currency === 'ex') {
             if (value < 10) groups.gEx1.items.push(s);
             else if (value < 100) groups.gEx2.items.push(s);
             else groups.gEx3.items.push(s);
         } else if (currency === 'd') {
-            if (value < 3) groups.g4.items.push(s); // < 3 covers 1D-2D range
-            else if (value < 8) groups.g5.items.push(s); // 3D-8D range
-            else groups.g6.items.push(s); // >= 8D
+            if (value < 3) groups.g4.items.push(s);
+            else if (value < 8) groups.g5.items.push(s);
+            else groups.g6.items.push(s);
         } else {
             groups.g7.items.push(s);
         }
@@ -92,14 +92,12 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
     const soldGroups = bucketItems(sales);
 
     // 2. Generate content for groups
-    // We iterate over keys (g1...g7)
     const groupKeys = Object.keys(listedGroups) as Array<keyof typeof listedGroups>;
     
     const groupsHtml = groupKeys.map(key => {
         const listed = listedGroups[key];
         const sold = soldGroups[key];
         
-        // Skip if empty in both
         if (listed.items.length === 0 && sold.items.length === 0) return '';
 
         return `
@@ -187,7 +185,7 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
             </form>
             <div class="flex" style="justify-content: flex-end; gap: 10px;">
                  <form method="POST" action="/tracking/refresh">
-                    <button type="submit" style="background: #3b82f6; color: white; padding: 8px 15px;">Refresh</button>
+                    <button type="submit" style="background: #3b82f6; color: white; padding: 8px 15px;">Refresh All</button>
                  </form>
                  <form method="POST" action="/tracking/clear" onsubmit="return confirm('Wipe ALL data?');">
                     <button type="submit" class="danger" style="padding: 8px 15px;">Clear</button>
@@ -264,17 +262,5 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
             ${groupsHtml}
         </div>
     `;
-
-
-
-        <!-- Grouped Listings & Sales -->
-        <h2>Tracking by Price Group</h2>
-        <div style="display: flex; flex-direction: column;">
-            ${groupsHtml}
-        </div>
-    `;
     return renderLayout('Trade Tracking', content, 'tracking');
 }
-
-// Old renderGroups function removed as it is integrated into renderTracking
-

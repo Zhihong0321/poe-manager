@@ -9,11 +9,8 @@ export async function scan(profile: TrackingProfile) {
     console.log(`[${new Date().toLocaleTimeString()}] Scanning for ${profile.accountName} in ${profile.league}...`);
     await initDB();
 
-    // Note: getKnownItemIds fetches *all* items. Ideally we should filter by account/league in DB too, 
-    // but for now we'll assume unique IDs handle collision or we scan all globally.
-    // For robust multi-profile, we might need to scope `knownIds` by profile. 
-    // However, item IDs are unique globally in PoE, so it's safe to mix.
-    const knownIds = await getKnownItemIds();
+    // Scope known IDs to this specific profile to prevent cross-profile interference
+    const knownIds = await getKnownItemIds(profile.accountName, profile.league);
     const seenIdsThisRun = new Set<string>();
     let salesCount = 0;
 
@@ -36,43 +33,43 @@ export async function scan(profile: TrackingProfile) {
                 const indexedAt = itemResult.listing?.indexed; // ISO Date String
 
                 if (!knownIds.has(itemId)) {
-                    await recordMovement(itemId, name, 'LISTED', price, tabName);
+                    await recordMovement(itemId, name, 'LISTED', price, tabName, profile.accountName, profile.league);
                 }
 
-                // Update DB with latest state
-                await saveItem(item, tabName, 0, indexedAt); 
+                // Update DB with latest state, now scoped by account/league
+                await saveItem(item, tabName, 0, profile.accountName, profile.league, indexedAt); 
             }
         }
 
         // 3. Check for SOLD items
-        // CRITICAL: Safety Check for Truncated Scans
-        // If we found fewer items than the server says we have, it means the API didn't give us everything.
-        // In this case, we CANNOT assume missing items are sold. They might just be hidden by the limit.
+        const isTruncated = itemIds.length < totalOnServer;
         
-        if (itemIds.length < totalOnServer) {
-            console.warn(`[Scan] WARNING: Incomplete scan detected (Found ${itemIds.length} / ${totalOnServer}). Skipping 'SOLD' detection to prevent false positives.`);
-        } else {
-            for (const knownId of knownIds) {
-                 // To safely support multiple profiles, we'd need to know who owns knownId. 
-                 // Since we don't, we might get false positives if we run multiple profiles.
-                 // But for the user's request "create tracking profile", usually implies switching or managing one main one.
-                 
-                if (!seenIdsThisRun.has(knownId)) {
-                    const dbItem = await import('./db.js').then(m => m.getItem(knownId));
+        if (isTruncated) {
+            console.warn(`[Scan] WARNING: Incomplete scan detected (Found ${itemIds.length} / ${totalOnServer}).`);
+            console.log(`[Scan] Some sold items might not be detected until a full scan succeeds.`);
+        }
+
+        for (const knownId of knownIds) {
+            if (!seenIdsThisRun.has(knownId)) {
+                // If truncated, we only mark as SOLD if we are reasonably sure.
+                // However, without more complex logic, we skip if truncated to be safe.
+                if (isTruncated) continue;
+
+                const dbItem = await import('./db.js').then(m => m.getItem(knownId));
+                
+                if (dbItem) {
+                    const name = dbItem.name || dbItem.typeLine; 
+                    const price = dbItem.note || 'No Price';
                     
-                    if (dbItem) {
-                        const name = dbItem.name || dbItem.typeLine; 
-                        const price = dbItem.note || 'No Price';
-                        
-                        console.log(`\n💰💰💰 ITEM SOLD! 💰💰💰`);
-                        console.log(`Item:  ${name}`);
-                        console.log(`Price: ${price}`);
-                        console.log(`Tab:   ${dbItem.tabName}`);
-                        
-                        await recordMovement(knownId, name, 'SOLD', price, dbItem.tabName);
-                        await removeItem(knownId);
-                        salesCount++;
-                    }
+                    console.log(`\n💰💰💰 ITEM SOLD! 💰💰💰`);
+                    console.log(`Item:  ${name}`);
+                    console.log(`Price: ${price}`);
+                    console.log(`Tab:   ${dbItem.tabName}`);
+                    
+                    await recordMovement(knownId, name, 'SOLD', price, dbItem.tabName, profile.accountName, profile.league);
+                    await removeItem(knownId);
+
+                    salesCount++;
                 }
             }
         }
@@ -86,5 +83,6 @@ export async function scan(profile: TrackingProfile) {
         console.error("Scan failed:", error);
     }
 }
+
 
 

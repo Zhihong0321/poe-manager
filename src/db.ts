@@ -18,10 +18,11 @@ export async function initDB() {
     const client = await pool.connect();
     try {
         // Table to store the latest known state of items
-        // usage: snake_case for columns to match PG default behavior
         await client.query(`
             CREATE TABLE IF NOT EXISTS item_snapshots (
                 id TEXT PRIMARY KEY, 
+                account_name TEXT,
+                league TEXT,
                 name TEXT,
                 type_line TEXT,
                 tab_name TEXT,
@@ -34,10 +35,16 @@ export async function initDB() {
             )
         `);
 
-        // Migration: Add indexed_at if not exists
+        // Migration: Add account_name and league if not exists
         await client.query(`
             DO $$
             BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_snapshots' AND column_name='account_name') THEN
+                    ALTER TABLE item_snapshots ADD COLUMN account_name TEXT;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_snapshots' AND column_name='league') THEN
+                    ALTER TABLE item_snapshots ADD COLUMN league TEXT;
+                END IF;
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_snapshots' AND column_name='indexed_at') THEN
                     ALTER TABLE item_snapshots ADD COLUMN indexed_at TIMESTAMP;
                 END IF;
@@ -45,10 +52,13 @@ export async function initDB() {
             $$;
         `);
 
+
         // Table to record movements (IN/OUT)
         await client.query(`
             CREATE TABLE IF NOT EXISTS item_movements (
                 id SERIAL PRIMARY KEY,
+                account_name TEXT,
+                league TEXT,
                 item_id TEXT,
                 item_name TEXT,
                 event_str TEXT, 
@@ -58,6 +68,21 @@ export async function initDB() {
                 details TEXT
             )
         `);
+
+        // Migration: Add account_name and league to movements
+        await client.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_movements' AND column_name='account_name') THEN
+                    ALTER TABLE item_movements ADD COLUMN account_name TEXT;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_movements' AND column_name='league') THEN
+                    ALTER TABLE item_movements ADD COLUMN league TEXT;
+                END IF;
+            END
+            $$;
+        `);
+
 
         // Table for App Settings
         await client.query(`
@@ -214,17 +239,24 @@ export async function setSetting(key: string, value: string) {
     await pool.query(query, [key, value]);
 }
 
-export async function getSalesHistory() {
-    // Return sold items sorted by newest first
-    const res = await pool.query(`
-        SELECT * FROM item_movements 
-        WHERE event_str = 'SOLD' 
-        ORDER BY timestamp DESC
-    `);
+export async function getSalesHistory(accountName?: string, league?: string) {
+    let query = 'SELECT * FROM item_movements WHERE event_str = \'SOLD\'
+';
+    const values: any[] = [];
     
-    // Map snake_case to camelCase for frontend
+    if (accountName && league) {
+        query += ' AND account_name = $1 AND league = $2';
+        values.push(accountName, league);
+    }
+    
+    query += ' ORDER BY timestamp DESC';
+    
+    const res = await pool.query(query, values);
+    
     return res.rows.map(row => ({
         id: row.id,
+        accountName: row.account_name,
+        league: row.league,
         itemId: row.item_id,
         itemName: row.item_name,
         event: row.event_str,
@@ -235,10 +267,19 @@ export async function getSalesHistory() {
     }));
 }
 
-export async function getKnownItemIds(): Promise<Set<string>> {
-    const res = await pool.query('SELECT id FROM item_snapshots');
+export async function getKnownItemIds(accountName?: string, league?: string): Promise<Set<string>> {
+    let query = 'SELECT id FROM item_snapshots';
+    const values: any[] = [];
+    
+    if (accountName && league) {
+        query += ' WHERE account_name = $1 AND league = $2';
+        values.push(accountName, league);
+    }
+    
+    const res = await pool.query(query, values);
     return new Set(res.rows.map(r => r.id));
 }
+
 
 export async function getItem(id: string) {
     const res = await pool.query('SELECT * FROM item_snapshots WHERE id = $1', [id]);
@@ -248,6 +289,8 @@ export async function getItem(id: string) {
     // Map back to camelCase for the app
     return {
         id: row.id,
+        accountName: row.account_name,
+        league: row.league,
         name: row.name,
         typeLine: row.type_line,
         tabName: row.tab_name,
@@ -260,11 +303,13 @@ export async function getItem(id: string) {
     };
 }
 
-export async function saveItem(item: any, tabName: string, tabIndex: number, indexedAt?: string) {
+export async function saveItem(item: any, tabName: string, tabIndex: number, accountName: string, league: string, indexedAt?: string) {
     const query = `
-        INSERT INTO item_snapshots (id, name, type_line, tab_name, tab_index, note, stack_size, raw_data, last_seen, indexed_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, $9)
+        INSERT INTO item_snapshots (id, account_name, league, name, type_line, tab_name, tab_index, note, stack_size, raw_data, last_seen, indexed_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, $11)
         ON CONFLICT (id) DO UPDATE SET
+            account_name = EXCLUDED.account_name,
+            league = EXCLUDED.league,
             name = EXCLUDED.name,
             type_line = EXCLUDED.type_line,
             tab_name = EXCLUDED.tab_name,
@@ -273,10 +318,12 @@ export async function saveItem(item: any, tabName: string, tabIndex: number, ind
             stack_size = EXCLUDED.stack_size,
             raw_data = EXCLUDED.raw_data,
             last_seen = CURRENT_TIMESTAMP,
-            indexed_at = COALESCE($9, item_snapshots.indexed_at)
+            indexed_at = COALESCE($11, item_snapshots.indexed_at)
     `;
     const values = [
         item.id,
+        accountName,
+        league,
         item.name,
         item.typeLine,
         tabName,
@@ -288,6 +335,7 @@ export async function saveItem(item: any, tabName: string, tabIndex: number, ind
     ];
     await pool.query(query, values);
 }
+
 
 export async function removeItem(id: string) {
     await pool.query('DELETE FROM item_snapshots WHERE id = $1', [id]);
@@ -314,14 +362,15 @@ export async function getAllSnapshots() {
     }));
 }
 
-export async function recordMovement(itemId: string, name: string, event: 'LISTED' | 'SOLD', price: string, tabName: string) {
+export async function recordMovement(itemId: string, name: string, event: 'LISTED' | 'SOLD', price: string, tabName: string, accountName: string, league: string) {
     const query = `
-        INSERT INTO item_movements (item_id, item_name, event_str, price, tab_name, timestamp)
-        VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+        INSERT INTO item_movements (item_id, item_name, event_str, price, tab_name, account_name, league, timestamp)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
     `;
-        await pool.query(query, [itemId, name, event, price, tabName]);
-        console.log(`[${event}] ${name} (${price}) in ${tabName}`);
-    }
+    await pool.query(query, [itemId, name, event, price, tabName, accountName, league]);
+    console.log(`[${event}] ${name} (${price}) in ${tabName} (${accountName})`);
+}
+
     
     // --- Market Watch ---
     
