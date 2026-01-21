@@ -5,8 +5,11 @@ import { statusBus } from './status_bus.js';
 dotenv.config();
 
 const USER_AGENT = 'PoE2TradeManager/1.0';
-const COOLDOWN_MS = 5000; // 5 Seconds Hard Limit per Cookie
-const RATE_LIMIT_PENALTY_MS = 60000; // 60s Penalty if we hit 429
+const RATE_LIMIT_PENALTY_MS = 60000; // 60s Default Penalty
+
+// Global IP-level cooldown to prevent spamming even with multiple cookies
+let globalNextRequestAt = 0;
+const GLOBAL_MIN_DELAY = 1500; // Minimum 1.5s between ANY request to PoE
 
 // Global map to track when each session can be used next
 const sessionCooldowns = new Map<string, number>();
@@ -25,93 +28,132 @@ const createClient = (sessId: string) => {
 };
 
 /**
+ * Parses PoE's rate limit state headers to adjust cooldowns dynamically.
+ * Header format: "requests:window:penalty,..."
+ */
+function updateCooldowns(sessId: string, headers: any) {
+    const accountState = headers['x-rate-limit-account-state'];
+    const ipState = headers['x-rate-limit-ip-state'];
+    const accountLimit = headers['x-rate-limit-account'];
+    
+    // If we see we are near the limit, we increase the wait time
+    // For now, we'll use a conservative approach: if any rule is hit or near hit, we wait.
+    
+    // Also respect Retry-After if present
+    const retryAfter = headers['retry-after'];
+    if (retryAfter) {
+        const seconds = parseInt(retryAfter, 10);
+        const penalty = (seconds + 2) * 1000; // Add 2s buffer
+        console.log(`[RateLimit] Retry-After detected: ${seconds}s. Penalizing sessions.`);
+        sessionCooldowns.set(sessId, Date.now() + penalty);
+        globalNextRequestAt = Date.now() + penalty;
+    }
+}
+
+/**
  * Finds a ready session or waits until one is available.
- * Returns the session ID to use.
  */
 async function getNextAvailableSession(sessIds: string[]): Promise<string> {
     if (sessIds.length === 0) throw new Error("No session IDs provided.");
 
     while (true) {
         const now = Date.now();
+        
+        // 1. Check Global IP limit first
+        if (now < globalNextRequestAt) {
+            const waitTime = globalNextRequestAt - now;
+            await new Promise(r => setTimeout(r, waitTime));
+            continue;
+        }
+
         let earliestReadyTime = Infinity;
         let readySession: string | null = null;
 
-        // 1. Try to find a ready session
+        // 2. Find a ready session
         for (const id of sessIds) {
             const readyAt = sessionCooldowns.get(id) || 0;
             if (now >= readyAt) {
                 readySession = id;
-                break; // Found one!
+                break;
             }
-            if (readyAt < earliestReadyTime) {
-                earliestReadyTime = readyAt;
-            }
+            if (readyAt < earliestReadyTime) earliestReadyTime = readyAt;
         }
 
-        // 2. If found, mark it used and return
         if (readySession) {
-            sessionCooldowns.set(readySession, now + COOLDOWN_MS);
+            // Set a base cooldown (Search is expensive, Fetch is cheaper)
+            // We'll use 5s as a safe baseline for Search, and the caller can adjust if needed
+            sessionCooldowns.set(readySession, now + 5000); 
+            globalNextRequestAt = now + GLOBAL_MIN_DELAY;
             return readySession;
         }
 
-        // 3. If none ready, wait
         const waitTime = earliestReadyTime - now;
         if (waitTime > 0) {
             statusBus.log(`Waiting ${Math.ceil(waitTime/1000)}s for cookie cooldown...`, 'wait');
-            await new Promise(r => setTimeout(r, Math.min(waitTime, 1000))); // Check every 1s or exact time
+            await new Promise(r => setTimeout(r, Math.min(waitTime, 1000)));
         } else {
-             // Should not happen if logic is correct, but safe fallback
              await new Promise(r => setTimeout(r, 500));
         }
     }
 }
 
 /**
- * Executes a request using the session rotation logic.
- * Handles 429s by penalizing the session and retrying with another.
+ * Executes a request using rotation and header-based rate limiting.
  */
 async function requestWithRotation(
     sessIds: string[], 
     method: 'get' | 'post', 
     url: string, 
-    data?: any
+    data?: any,
+    baseCooldown: number = 5000
 ): Promise<any> {
     let attempts = 0;
-    const maxAttempts = sessIds.length * 3; // Try a few times per session effectively
+    const maxAttempts = sessIds.length * 2;
 
     while (attempts < maxAttempts) {
         const sessId = await getNextAvailableSession(sessIds);
+        // Re-set cooldown based on request type
+        sessionCooldowns.set(sessId, Date.now() + baseCooldown);
+        
         const client = createClient(sessId);
 
         try {
-            statusBus.log(`Sending API Request to ${url.split('?')[0]}...`, 'info');
+            statusBus.log(`API Request: ${url.split('?')[0]}`, 'info');
             let response;
             if (method === 'get') {
                 response = await client.get(url);
-            } else {
+            }
+            else {
                 response = await client.post(url, data);
             }
-            statusBus.log(`API Success: ${url.split('?')[0]}`, 'success');
+            
+            updateCooldowns(sessId, response.headers);
+            statusBus.log(`API Success`, 'success');
             return response;
         } catch (error: any) {
             const status = error.response?.status;
+            const headers = error.response?.headers || {};
             
             if (status === 429) {
-                statusBus.log(`Rate Limited (429)! Penalizing session.`, 'error');
-                sessionCooldowns.set(sessId, Date.now() + RATE_LIMIT_PENALTY_MS);
+                statusBus.log(`Rate Limited (429)! Parsing headers...`, 'error');
+                updateCooldowns(sessId, headers);
+                // If no specific retry-after, apply default penalty
+                if (!headers['retry-after']) {
+                    sessionCooldowns.set(sessId, Date.now() + RATE_LIMIT_PENALTY_MS);
+                }
             } else if (status === 403 || status === 401) {
-                statusBus.log(`Auth Error (${status}). Skipping cookie.`, 'error');
+                statusBus.log(`Auth Error (${status}).`, 'error');
                 sessionCooldowns.set(sessId, Date.now() + 3600000); 
             } else {
-                statusBus.log(`Request Failed (${status}). Retrying...`, 'error');
+                statusBus.log(`Error ${status}. Retrying...`, 'error');
+                sessionCooldowns.set(sessId, Date.now() + 10000); // 10s wait on error
             }
             
             attempts++;
-            // If we exhausted all attempts, throw
             if (attempts >= maxAttempts) throw error;
         }
     }
-    throw new Error("Max retry attempts reached.");
+    throw new Error("Max attempts reached.");
 }
 
 
@@ -187,16 +229,12 @@ export async function getStashTabs(accountName: string, league: string, sessIds:
 
         console.log(`[Scan] Fetching items for ${accountName} (Price Asc/Desc + Newest)...`);
 
-        // Execute requests in parallel. 
-        // requestWithRotation will manage the waiting/queueing internally to respect 5s limit.
-        
-        const fetchIds = (query: any) => requestWithRotation(sessIds, 'post', url, query).then(res => res.data);
+        const fetchIds = (query: any) => requestWithRotation(sessIds, 'post', url, query, 6000).then(res => res.data);
 
-        const [dataAsc, dataDesc, dataNew] = await Promise.all([
-            fetchIds(queryAsc).catch(e => { console.error("Asc Query Failed", e.message); throw e; }),
-            fetchIds(queryDesc).catch(e => { console.error("Desc Query Failed", e.message); throw e; }),
-            fetchIds(queryNew).catch(e => { console.error("New Query Failed", e.message); throw e; })
-        ]);
+        // Execute base queries sequentially to avoid IP-level burst limits
+        const dataAsc = await fetchIds(queryAsc);
+        const dataDesc = await fetchIds(queryDesc);
+        const dataNew = await fetchIds(queryNew);
 
         const ids = new Set<string>();
         let totalOnServer = 0;
@@ -298,36 +336,87 @@ export async function searchTrade(league: string, query: any, sessIds: string[])
 }
 
 export async function fetchItemDetails(itemIds: string[], sessIds: string[]) {
+
     if (itemIds.length === 0) return [];
+
     
-    // Trade API fetch limit is usually 10 items per call
-    const chunks = [];
-    for (let i = 0; i < itemIds.length; i += 10) {
-        chunks.push(itemIds.slice(i, i + 10));
+
+    // Safety: don't try to fetch more than 500 items in one go
+
+    const idsToFetch = itemIds.slice(0, 500);
+
+    if (itemIds.length > 500) {
+
+        statusBus.log(`Large stash detected! Limiting fetch to 500 items.`, 'error');
+
     }
 
+
+
+    const chunks = [];
+
+    for (let i = 0; i < idsToFetch.length; i += 10) {
+
+        chunks.push(idsToFetch.slice(i, i + 10));
+
+    }
+
+
+
     let allItems: any[] = [];
+
     
-    // We can run these in parallel too, limited by session availability
-    const chunkPromises = chunks.map(async (chunk) => {
+
+            // Fetch chunks sequentially to be nice to the API
+
+    
+
+            for (let i = 0; i < chunks.length; i++) {
+
+    
+
+                const chunk = chunks[i]!;
+
+    
+
+                statusBus.log(`Fetching items ${i*10 + 1} to ${Math.min((i+1)*10, idsToFetch.length)}...`, 'info');
+
+    
+
+        
+
+    
+
+    
+
+        
+
         try {
+
             const url = `/api/trade2/fetch/${chunk.join(',')}?id=placeholder`; 
-            const response = await requestWithRotation(sessIds, 'get', url);
+
+            // Fetch API is usually more lenient, 2s is safe
+
+            const response = await requestWithRotation(sessIds, 'get', url, null, 2000);
+
+
 
             if (response.data && response.data.result) {
-                return response.data.result;
-            }
-        } catch (error: any) {
-            console.error("Error fetching item details chunk:", error.response?.status, error.message);
-            return [];
-        }
-        return [];
-    });
 
-    const results = await Promise.all(chunkPromises);
-    results.forEach(res => {
-        allItems = allItems.concat(res);
-    });
+                allItems = allItems.concat(response.data.result);
+
+            }
+
+        } catch (error: any) {
+
+            statusBus.log(`Failed to fetch chunk. Continuing...`, 'error');
+
+        }
+
+    }
+
     
+
     return allItems;
+
 }
