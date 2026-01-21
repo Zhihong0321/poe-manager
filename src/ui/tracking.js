@@ -1,4 +1,21 @@
 import { renderLayout } from './layout.js';
+function formatDuration(isoString) {
+    if (!isoString)
+        return 'New';
+    const now = new Date();
+    const then = new Date(isoString);
+    const diffMs = now.getTime() - then.getTime();
+    if (diffMs < 0)
+        return 'Just now';
+    const minutes = Math.floor(diffMs / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    if (days > 0)
+        return `${days}d ${hours % 24}h`;
+    if (hours > 0)
+        return `${hours}h ${minutes % 60}m`;
+    return `${minutes}m`;
+}
 function parsePrice(note) {
     if (!note)
         return { value: 0, currency: 'unknown' };
@@ -11,8 +28,10 @@ function parsePrice(note) {
     if (lower.includes('divine') || lower.includes('div') || /\bd\b/.test(lower)) {
         return { value: val, currency: 'd' };
     }
-    // Treat "ex", "chaos", "c" as Chaos/Small currency bucket
-    if (lower.includes('chaos') || lower.includes('ex') || /\bc\b/.test(lower)) {
+    if (lower.includes('exalt') || /\bex\b/.test(lower)) {
+        return { value: val, currency: 'ex' };
+    }
+    if (lower.includes('chaos') || /\bc\b/.test(lower)) {
         return { value: val, currency: 'c' };
     }
     return { value: val, currency: 'unknown' };
@@ -20,16 +39,21 @@ function parsePrice(note) {
 // Helper to define groups and sort items
 function bucketItems(items) {
     const groups = {
-        g1: { label: '0 ~ 100ex (Chaos)', items: [], color: '#94a3b8' },
-        g2: { label: '100 ~ 300ex (Chaos)', items: [], color: '#cbd5e1' },
-        g3: { label: '300 ~ 700ex (Chaos)', items: [], color: '#e2e8f0' },
+        g1: { label: '0 ~ 100 Chaos', items: [], color: '#94a3b8' },
+        g2: { label: '100 ~ 300 Chaos', items: [], color: '#cbd5e1' },
+        g3: { label: '300 ~ 800 Chaos', items: [], color: '#e2e8f0' },
+        gEx1: { label: '0 ~ 20 Exalted', items: [], color: '#fdba74' },
+        gEx2: { label: '20 ~ 100 Exalted', items: [], color: '#fb923c' },
+        gEx3: { label: '100 ~ 200 Exalted', items: [], color: '#ea580c' },
+        gEx4: { label: '200+ Exalted', items: [], color: '#991b1b' },
         g4: { label: '1D ~ 2D', items: [], color: '#facc15' },
-        g5: { label: '3D ~ 8D', items: [], color: '#f59e0b' },
-        g6: { label: '8D and above', items: [], color: '#ef4444' },
-        g7: { label: 'Unpriced / Other', items: [], color: '#64748b' }
+        g5: { label: '3D ~ 5D', items: [], color: '#f59e0b' },
+        g6: { label: '6D ~ 10D', items: [], color: '#d97706' },
+        g7: { label: '11D ~ 25D', items: [], color: '#b45309' },
+        g8: { label: '26D and above', items: [], color: '#ef4444' },
+        g9: { label: 'Unpriced / Other', items: [], color: '#64748b' }
     };
     items.forEach(s => {
-        // Sales objects use 'price' field, Snapshots use 'note'. Handle both.
         const priceStr = s.note || s.price || '';
         const { value, currency } = parsePrice(priceStr);
         if (currency === 'c') {
@@ -37,43 +61,61 @@ function bucketItems(items) {
                 groups.g1.items.push(s);
             else if (value < 300)
                 groups.g2.items.push(s);
-            else if (value <= 700)
+            else if (value <= 800)
                 groups.g3.items.push(s);
             else
-                groups.g7.items.push(s);
+                groups.g9.items.push(s);
+        }
+        else if (currency === 'ex') {
+            if (value < 20)
+                groups.gEx1.items.push(s);
+            else if (value < 100)
+                groups.gEx2.items.push(s);
+            else if (value < 200)
+                groups.gEx3.items.push(s);
+            else
+                groups.gEx4.items.push(s);
         }
         else if (currency === 'd') {
             if (value < 3)
-                groups.g4.items.push(s); // < 3 covers 1D-2D range
-            else if (value < 8)
-                groups.g5.items.push(s); // 3D-8D range
+                groups.g4.items.push(s);
+            else if (value < 6)
+                groups.g5.items.push(s);
+            else if (value < 11)
+                groups.g6.items.push(s);
+            else if (value < 26)
+                groups.g7.items.push(s);
             else
-                groups.g6.items.push(s); // >= 8D
+                groups.g8.items.push(s);
         }
         else {
-            groups.g7.items.push(s);
+            groups.g9.items.push(s);
         }
     });
     return groups;
 }
-export function renderTracking(sales, interval, profiles, snapshots) {
+export function renderTracking(sales, interval, profiles, snapshots, syncStats = {}) {
+    const now = new Date();
+    // Filter out sales older than 500 minutes
+    const recentSales = sales.filter(s => {
+        const diffMs = now.getTime() - new Date(s.timestamp).getTime();
+        return diffMs < (500 * 60 * 1000);
+    });
     // 1. Bucket the items
     const listedGroups = bucketItems(snapshots);
-    const soldGroups = bucketItems(sales);
+    const soldGroups = bucketItems(recentSales);
     // 2. Generate content for groups
-    // We iterate over keys (g1...g7)
     const groupKeys = Object.keys(listedGroups);
     const groupsHtml = groupKeys.map(key => {
         const listed = listedGroups[key];
         const sold = soldGroups[key];
-        // Skip if empty in both
         if (listed.items.length === 0 && sold.items.length === 0)
             return '';
         return `
-            <div class="box" style="margin-bottom: 20px; border-left: 4px solid ${listed.color}; padding: 0; overflow: hidden;">
+            <div style="margin-bottom: 0; border-left: 4px solid ${listed.color}; border-bottom: 1px solid #334155; background: #1e293b;">
                 <!-- Header -->
-                <div style="padding: 15px; background: rgba(0,0,0,0.2); border-bottom: 1px solid #334155;">
-                    <h3 style="margin: 0; color: ${listed.color};">${listed.label}</h3>
+                <div style="padding: 12px 20px; background: rgba(0,0,0,0.3); border-bottom: 1px solid #334155;">
+                    <h3 style="margin: 0; color: ${listed.color}; text-transform: uppercase; font-size: 0.9rem; letter-spacing: 1px;">${listed.label}</h3>
                 </div>
 
                 <!-- 2-Column Layout -->
@@ -81,23 +123,25 @@ export function renderTracking(sales, interval, profiles, snapshots) {
                     
                     <!-- LEFT: Listed -->
                     <div style="flex: 1; min-width: 300px; border-right: 1px solid #334155;">
-                        <div style="padding: 10px; background: #1e293b; border-bottom: 1px solid #334155; font-size: 0.9rem; font-weight: bold; color: #94a3b8; display: flex; justify-content: space-between;">
+                        <div style="padding: 8px 20px; background: rgba(0,0,0,0.15); border-bottom: 1px solid #334155; font-size: 0.75rem; font-weight: bold; color: #94a3b8; display: flex; justify-content: space-between;">
                             <span>CURRENTLY LISTED</span>
-                            <span style="background: #334155; padding: 2px 8px; border-radius: 10px; color: #e2e8f0;">${listed.items.length}</span>
+                            <span style="color: #e2e8f0;">${listed.items.length}</span>
                         </div>
-                        <div style="max-height: 300px; overflow-y: auto;">
-                            <table style="margin: 0; box-shadow: none;">
+                        <div>
+                            <table style="margin: 0; border: none; background: transparent;">
                                 <tbody>
-                                    ${listed.items.length === 0 ? '<tr><td style="text-align:center; padding: 20px; color: #555;">No items listed.</td></tr>' : ''}
+                                    ${listed.items.length === 0 ? '<tr><td style="text-align:center; padding: 20px; color: #475569; font-size: 0.85rem;">No items listed.</td></tr>' : ''}
                                     ${listed.items.map(s => `
                                         <tr>
-                                            <td style="padding: 8px 12px;">
-                                                <div style="font-weight:500;">${s.name || s.typeLine}</div>
-                                                <div style="font-size:0.8rem; color:#64748b;">${s.tabName}</div>
+                                            <td style="padding: 10px 20px;">
+                                                <div style="font-weight:500;">
+                                                    <a href="/item/${s.id}" style="color: #f1f5f9; text-decoration: none; border-bottom: 1px dashed #475569;">${s.name || s.typeLine}</a>
+                                                </div>
+                                                <div style="font-size:0.75rem; color:#64748b; margin-top: 2px;">${s.tabName}</div>
                                             </td>
-                                            <td style="padding: 8px 12px; text-align:right;">
+                                            <td style="padding: 10px 20px; text-align:right;">
                                                 <div class="price">${s.note || 'No Price'}</div>
-                                                <div style="font-size:0.75rem; color:#64748b;"><span class="local-time-short" data-time="${s.lastSeen}">Time</span></div>
+                                                <div style="font-size:0.7rem; color:#475569; margin-top: 2px;">${formatDuration(s.indexedAt)}</div>
                                             </td>
                                         </tr>
                                     `).join('')}
@@ -108,26 +152,30 @@ export function renderTracking(sales, interval, profiles, snapshots) {
 
                     <!-- RIGHT: Sold -->
                     <div style="flex: 1; min-width: 300px;">
-                        <div style="padding: 10px; background: #0f172a; border-bottom: 1px solid #334155; font-size: 0.9rem; font-weight: bold; color: #4ade80; display: flex; justify-content: space-between;">
+                        <div style="padding: 8px 20px; background: rgba(0,0,0,0.25); border-bottom: 1px solid #334155; font-size: 0.75rem; font-weight: bold; color: #4ade80; display: flex; justify-content: space-between;">
                             <span>SOLD HISTORY</span>
-                            <span style="background: rgba(74, 222, 128, 0.2); padding: 2px 8px; border-radius: 10px; color: #4ade80;">${sold.items.length}</span>
+                            <span style="color: #4ade80;">${sold.items.length}</span>
                         </div>
-                        <div style="max-height: 300px; overflow-y: auto; background: #0f172a;">
-                            <table style="margin: 0; box-shadow: none; background: #0f172a;">
+                        <div style="background: rgba(0,0,0,0.1);">
+                            <table style="margin: 0; border: none; background: transparent;">
                                 <tbody>
-                                    ${sold.items.length === 0 ? '<tr><td style="text-align:center; padding: 20px; color: #555;">No sales yet.</td></tr>' : ''}
-                                    ${sold.items.map(s => `
-                                        <tr>
-                                            <td style="padding: 8px 12px;">
-                                                <div style="font-weight:500;">${s.itemName}</div>
-                                                <div style="font-size:0.8rem; color:#64748b;">${s.tabName}</div>
+                                    ${sold.items.length === 0 ? '<tr><td style="text-align:center; padding: 20px; color: #475569; font-size: 0.85rem;">No sales yet.</td></tr>' : ''}
+                                    ${sold.items.map(s => {
+            const minutesAgo = Math.floor((now.getTime() - new Date(s.timestamp).getTime()) / 60000);
+            const opacity = Math.max(0, (100 - (minutesAgo / 5))) / 100;
+            return `
+                                        <tr style="opacity: ${opacity};">
+                                            <td style="padding: 10px 20px;">
+                                                <div style="font-weight:500; color: #cbd5e1;">${s.itemName}</div>
+                                                <div style="font-size:0.75rem; color:#64748b; margin-top: 2px;">${s.tabName}</div>
                                             </td>
-                                            <td style="padding: 8px 12px; text-align:right;">
+                                            <td style="padding: 10px 20px; text-align:right;">
                                                 <div class="price">${s.price}</div>
-                                                <div style="font-size:0.75rem; color:#64748b;"><span class="local-time" data-time="${s.timestamp}">Time</span></div>
+                                                <div style="font-size:0.7rem; color:#475569; margin-top: 2px;"><span class="local-time-short" data-time="${s.timestamp}">Time</span></div>
                                             </td>
                                         </tr>
-                                    `).join('')}
+                                    `;
+        }).join('')}
                                 </tbody>
                             </table>
                         </div>
@@ -141,77 +189,109 @@ export function renderTracking(sales, interval, profiles, snapshots) {
         <h1>Trade Tracking</h1>
 
         <!-- Global Settings -->
-        <div class="box flex" style="justify-content: space-between;">
-            <form method="POST" action="/settings" class="flex">
-                <label>Scan Interval (min):</label>
-                <input type="number" name="interval" value="${interval}" min="1" style="width: 60px;">
-                <button type="submit">Save</button>
+        <div class="box flex" style="justify-content: space-between; background: #1e293b;">
+            <form method="POST" action="/settings" class="flex" style="flex-grow: 1;">
+                <label style="font-size: 0.9rem; color: #94a3b8;">Scan Interval (min):</label>
+                <div class="flex" style="flex-wrap: nowrap; gap: 5px;">
+                    <input type="number" name="interval" value="${interval}" min="1" style="width: 70px; padding: 8px;">
+                    <button type="submit" style="padding: 8px 15px;">Save</button>
+                </div>
             </form>
-            <div class="flex">
+            <div class="flex" style="justify-content: flex-end; gap: 10px;">
                  <form method="POST" action="/tracking/refresh">
-                    <button type="submit" style="background: #3b82f6; color: white;">Refresh All</button>
+                    <button type="submit" style="background: #3b82f6; color: white; padding: 8px 15px;">Refresh All</button>
                  </form>
-                 <form method="POST" action="/tracking/clear" onsubmit="return confirm('This will wipe ALL sales history and current listings. Are you sure?');">
-                    <button type="submit" class="danger" style="margin-left: 10px;">Clear All Data</button>
+                 <form method="POST" action="/tracking/clear" onsubmit="return confirm('Wipe ALL data?');">
+                    <button type="submit" class="danger" style="padding: 8px 15px;">Clear</button>
                  </form>
-                 <span style="color: #64748b; font-size: 0.9rem; margin-left: 10px;">Auto-refreshing in background</span>
             </div>
         </div>
 
         <!-- Profiles -->
         <h2>Tracking Profiles</h2>
-        <div class="box">
-            <form method="POST" action="/profiles/add" class="flex" style="margin-bottom: 20px; background: #0f172a; padding: 15px; border-radius: 6px; border: 1px solid #334155;">
-                <input type="text" name="accountName" placeholder="Account Name (e.g. User#1234)" required style="width: 200px;">
-                <input type="text" name="league" placeholder="League" value="Fate of the Vaal" required style="width: 150px;">
-                <input type="text" name="sessId" placeholder="POESESSID (Cookie)" required style="flex-grow:1;">
-                <button type="submit">Add Profile</button>
-            </form>
+        <div style="background: #1e293b; border: 1px solid #334155; border-bottom: none;">
+            <div style="padding: 20px; background: rgba(0,0,0,0.2); border-bottom: 1px solid #334155;">
+                <h3 style="margin-top:0; font-size:1rem; color:#facc15; text-transform: uppercase; letter-spacing: 1px;">Add New Profile</h3>
+                <form method="POST" action="/profiles/add">
+                    <div class="flex" style="margin-bottom: 15px;">
+                        <input type="text" name="accountName" placeholder="Account Name (User#1234)" required style="flex: 2; min-width: 200px;">
+                        <input type="text" name="league" placeholder="League" value="Fate of the Vaal" required style="flex: 1; min-width: 150px;">
+                    </div>
+                    
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+                        <input type="text" name="sessId_1" placeholder="POESESSID (Required)" required style="flex: 1; min-width: 250px;">
+                        <input type="text" name="sessId_2" placeholder="POESESSID (Optional)" style="flex: 1; min-width: 250px;">
+                        <input type="text" name="sessId_3" placeholder="POESESSID (Optional)" style="flex: 1; min-width: 250px;">
+                    </div>
 
-            <table>
-                <thead>
-                    <tr>
-                        <th>Account</th>
-                        <th>League</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${profiles.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding: 10px; color: #555;">No profiles. Add one to start tracking.</td></tr>' : ''}
-                    ${profiles.map(p => `
+                    <button type="submit" style="width: 100%; letter-spacing: 2px;">Add Profile</button>
+                </form>
+            </div>
+
+            <div class="table-container" style="border: none;">
+                <table style="min-width: 600px; background: transparent;">
+                    <thead>
                         <tr>
-                            <td>${p.accountName}</td>
-                            <td>${p.league}</td>
-                            <td><span class="${p.isActive ? 'status-active' : 'status-inactive'}">${p.isActive ? 'ACTIVE' : 'PAUSED'}</span></td>
-                            <td class="flex" style="border:none; padding: 10px;">
-                                <form method="POST" action="/profiles/sync">
-                                    <input type="hidden" name="id" value="${p.id}">
-                                    <button type="submit" class="sync" title="Sync Now">Sync</button>
-                                </form>
-                                <form method="POST" action="/profiles/toggle">
-                                    <input type="hidden" name="id" value="${p.id}">
-                                    <input type="hidden" name="isActive" value="${!p.isActive}">
-                                    <button type="submit" class="toggle">${p.isActive ? 'Pause' : 'Resume'}</button>
-                                </form>
-                                <form method="POST" action="/profiles/delete" onsubmit="return confirm('Are you sure?');">
-                                    <input type="hidden" name="id" value="${p.id}">
-                                    <button type="submit" class="danger">Delete</button>
-                                </form>
-                            </td>
+                            <th>Account</th>
+                            <th>League</th>
+                            <th>Status</th>
+                            <th style="text-align: right;">Actions</th>
                         </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        ${profiles.length === 0 ? '<tr><td colspan="4" style="text-align:center; padding: 30px; color: #475569;">No profiles. Add one to start tracking.</td></tr>' : ''}
+                        ${profiles.map(p => `
+                            <tr>
+                                <td><span style="font-weight: bold; color: #f1f5f9;">${p.accountName}</span></td>
+                                <td style="color: #94a3b8;">${p.league}</td>
+                                <td><span class="${p.isActive ? 'status-active' : 'status-inactive'}">${p.isActive ? 'ACTIVE' : 'PAUSED'}</span></td>
+                                <td style="border:none; padding: 10px;">
+                                    <div class="flex" style="justify-content: flex-end; gap: 5px; flex-wrap: nowrap;">
+                                        <a href="/profiles/edit/${p.id}" class="button" style="background:#475569; color: white; text-decoration:none; padding: 6px 10px; font-size: 0.75rem; border-radius: 2px;">Edit</a>
+                                        <form method="POST" action="/profiles/sync">
+                                            <input type="hidden" name="id" value="${p.id}">
+                                            <button type="submit" class="sync" title="Sync Now" style="padding: 6px 10px; font-size: 0.75rem; border-radius: 2px;">Sync</button>
+                                        </form>
+                                        <form method="POST" action="/profiles/toggle">
+                                            <input type="hidden" name="id" value="${p.id}">
+                                            <input type="hidden" name="isActive" value="${!p.isActive}">
+                                            <button type="submit" class="toggle" style="padding: 6px 10px; font-size: 0.75rem; border-radius: 2px;">${p.isActive ? 'Pause' : 'Resume'}</button>
+                                        </form>
+                                        <form method="POST" action="/profiles/delete" onsubmit="return confirm('Delete?');">
+                                            <input type="hidden" name="id" value="${p.id}">
+                                            <button type="submit" class="danger" style="padding: 6px 10px; font-size: 0.75rem; border-radius: 2px;">X</button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            ${(syncStats[p.id] && syncStats[p.id].length > 0) ? `
+                            <tr style="background: rgba(0,0,0,0.1);">
+                                <td colspan="4" style="padding: 10px 20px;">
+                                    <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px;">Category Refresh Status</div>
+                                    <div class="flex" style="gap: 10px; justify-content: flex-start;">
+                                        ${syncStats[p.id].map((s) => `
+                                            <div style="background: #0f172a; padding: 4px 8px; border-radius: 4px; border: 1px solid #334155; font-size: 0.7rem;">
+                                                <span style="color: #facc15; font-weight: bold;">${s.category}:</span> 
+                                                <span style="color: #e2e8f0;">${s.itemCount}</span>
+                                                <span style="color: #475569; margin-left: 5px;">${formatDuration(s.lastSync)} ago</span>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </td>
+                            </tr>
+                            ` : ''}
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <!-- Grouped Listings & Sales -->
-        <h2>Tracking by Price Group</h2>
-        <div style="display: flex; flex-direction: column;">
+        <h2 style="margin-top: 40px;">Tracking by Price Group</h2>
+        <div style="display: flex; flex-direction: column; border: 1px solid #334155; border-bottom: none;">
             ${groupsHtml}
         </div>
     `;
     return renderLayout('Trade Tracking', content, 'tracking');
 }
-// Old renderGroups function removed as it is integrated into renderTracking
 //# sourceMappingURL=tracking.js.map

@@ -16,7 +16,7 @@ export async function scan(profile: TrackingProfile) {
 
     try {
         // 1. Get IDs of all items listed by seller
-        const { ids: itemIds, total: totalOnServer } = await getStashTabs(profile.accountName, profile.league, profile.sessIds);
+        const { ids: itemIds, total: totalOnServer, categoryStats } = await getStashTabs(profile.accountName, profile.league, profile.sessIds);
         
         if (itemIds.length > 0) {
             // 2. Fetch full details for these items
@@ -30,14 +30,24 @@ export async function scan(profile: TrackingProfile) {
                 const price = item.note || 'No Price';
                 const name = item.name || item.typeLine;
                 const tabName = itemResult.listing?.stash?.name || 'Unknown Tab';
-                const indexedAt = itemResult.listing?.indexed; // ISO Date String
+                const indexedAt = itemResult.listing?.indexed; 
+
+                // Determine category from raw data if available
+                let category = 'other';
+                if (item.category) {
+                    category = Object.keys(item.category)[0] || 'other';
+                }
 
                 if (!knownIds.has(itemId)) {
                     await recordMovement(itemId, name, 'LISTED', price, tabName, profile.accountName, profile.league);
                 }
 
-                // Update DB with latest state, now scoped by account/league
-                await saveItem(item, tabName, 0, profile.accountName, profile.league, indexedAt); 
+                await saveItem(item, tabName, 0, profile.accountName, profile.league, category, indexedAt); 
+            }
+
+            // Update Sync Stats
+            for (const [cat, count] of Object.entries(categoryStats || {})) {
+                await import('./db.js').then(m => m.updateCategorySync(profile.accountName, profile.league, cat, count as number));
             }
         }
 

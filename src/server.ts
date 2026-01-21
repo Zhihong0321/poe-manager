@@ -43,7 +43,14 @@ app.get('/tracking', async (req, res) => {
         const interval = await getSetting('scan_interval_min') || '10';
         const profiles = await getProfiles();
         const snapshots = await getAllSnapshots();
-        res.send(renderTracking(sales, interval, profiles, snapshots));
+        
+        // Fetch sync stats for each profile
+        const syncStats: Record<number, any[]> = {};
+        for (const p of profiles) {
+            syncStats[p.id] = await import('./db.js').then(m => m.getCategorySyncStats(p.accountName, p.league));
+        }
+
+        res.send(renderTracking(sales, interval, profiles, snapshots, syncStats));
     } catch (err) {
         console.error(err);
         res.status(500).send('Database Error');

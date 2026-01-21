@@ -92,7 +92,7 @@ function bucketItems(items: any[]) {
 }
 
 
-export function renderTracking(sales: any[], interval: string, profiles: any[], snapshots: any[]) {
+export function renderTracking(sales: any[], interval: string, profiles: any[], snapshots: any[], syncStats: Record<number, any[]> = {}) {
     const now = new Date();
     
     // Filter out sales older than 500 minutes
@@ -268,6 +268,22 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
                                     </div>
                                 </td>
                             </tr>
+                            ${(syncStats[p.id] && (syncStats[p.id] as any[]).length > 0) ? `
+                            <tr style="background: rgba(0,0,0,0.1);">
+                                <td colspan="4" style="padding: 10px 20px;">
+                                    <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px;">Category Refresh Status</div>
+                                    <div class="flex" style="gap: 10px; justify-content: flex-start;">
+                                        ${(syncStats[p.id] as any[]).map((s: any) => `
+                                            <div style="background: #0f172a; padding: 4px 8px; border-radius: 4px; border: 1px solid #334155; font-size: 0.7rem;">
+                                                <span style="color: #facc15; font-weight: bold;">${s.category}:</span> 
+                                                <span style="color: #e2e8f0;">${s.itemCount}</span>
+                                                <span style="color: #475569; margin-left: 5px;">${formatDuration(s.lastSync)} ago</span>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </td>
+                            </tr>
+                            ` : ''}
                         `).join('')}
                     </tbody>
                 </table>

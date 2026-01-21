@@ -23,6 +23,7 @@ export async function initDB() {
                 id TEXT PRIMARY KEY, 
                 account_name TEXT,
                 league TEXT,
+                category TEXT,
                 name TEXT,
                 type_line TEXT,
                 tab_name TEXT,
@@ -35,7 +36,20 @@ export async function initDB() {
             )
         `);
 
-        // Migration: Add account_name and league if not exists
+        // Table for tracking per-category sync status
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS category_sync_stats (
+                id SERIAL PRIMARY KEY,
+                account_name TEXT,
+                league TEXT,
+                category TEXT,
+                item_count INTEGER,
+                last_sync TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(account_name, league, category)
+            )
+        `);
+
+        // Migration: Add account_name, league, category if not exists
         await client.query(`
             DO $$
             BEGIN
@@ -45,12 +59,16 @@ export async function initDB() {
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_snapshots' AND column_name='league') THEN
                     ALTER TABLE item_snapshots ADD COLUMN league TEXT;
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_snapshots' AND column_name='category') THEN
+                    ALTER TABLE item_snapshots ADD COLUMN category TEXT;
+                END IF;
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='item_snapshots' AND column_name='indexed_at') THEN
                     ALTER TABLE item_snapshots ADD COLUMN indexed_at TIMESTAMP;
                 END IF;
             END
             $$;
         `);
+
 
 
         // Table to record movements (IN/OUT)
@@ -302,13 +320,14 @@ export async function getItem(id: string) {
     };
 }
 
-export async function saveItem(item: any, tabName: string, tabIndex: number, accountName: string, league: string, indexedAt?: string) {
+export async function saveItem(item: any, tabName: string, tabIndex: number, accountName: string, league: string, category: string, indexedAt?: string) {
     const query = `
-        INSERT INTO item_snapshots (id, account_name, league, name, type_line, tab_name, tab_index, note, stack_size, raw_data, last_seen, indexed_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, $11)
+        INSERT INTO item_snapshots (id, account_name, league, category, name, type_line, tab_name, tab_index, note, stack_size, raw_data, last_seen, indexed_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, $12)
         ON CONFLICT (id) DO UPDATE SET
             account_name = EXCLUDED.account_name,
             league = EXCLUDED.league,
+            category = EXCLUDED.category,
             name = EXCLUDED.name,
             type_line = EXCLUDED.type_line,
             tab_name = EXCLUDED.tab_name,
@@ -317,12 +336,13 @@ export async function saveItem(item: any, tabName: string, tabIndex: number, acc
             stack_size = EXCLUDED.stack_size,
             raw_data = EXCLUDED.raw_data,
             last_seen = CURRENT_TIMESTAMP,
-            indexed_at = COALESCE($11, item_snapshots.indexed_at)
+            indexed_at = COALESCE($12, item_snapshots.indexed_at)
     `;
     const values = [
         item.id,
         accountName,
         league,
+        category,
         item.name,
         item.typeLine,
         tabName,
@@ -333,6 +353,30 @@ export async function saveItem(item: any, tabName: string, tabIndex: number, acc
         indexedAt || null
     ];
     await pool.query(query, values);
+}
+
+export async function updateCategorySync(accountName: string, league: string, category: string, count: number) {
+    const query = `
+        INSERT INTO category_sync_stats (account_name, league, category, item_count, last_sync)
+        VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+        ON CONFLICT (account_name, league, category) 
+        DO UPDATE SET 
+            item_count = EXCLUDED.item_count,
+            last_sync = CURRENT_TIMESTAMP
+    `;
+    await pool.query(query, [accountName, league, category, count]);
+}
+
+export async function getCategorySyncStats(accountName: string, league: string) {
+    const res = await pool.query(
+        'SELECT * FROM category_sync_stats WHERE account_name = $1 AND league = $2 ORDER BY category ASC',
+        [accountName, league]
+    );
+    return res.rows.map(r => ({
+        category: r.category,
+        itemCount: r.item_count,
+        lastSync: r.last_sync
+    }));
 }
 
 
