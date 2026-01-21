@@ -395,9 +395,11 @@ export async function fetchItemDetails(itemIds: string[], sessIds: string[]) {
 
             const url = `/api/trade2/fetch/${chunk.join(',')}?id=placeholder`; 
 
-            // Fetch API is usually more lenient, 2s is safe
+                        // Fetch API is usually more lenient, 3s is safe
 
-            const response = await requestWithRotation(sessIds, 'get', url, null, 2000);
+                        const response = await requestWithRotation(sessIds, 'get', url, null, 3000);
+
+            
 
 
 
