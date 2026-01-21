@@ -93,9 +93,17 @@ function bucketItems(items: any[]) {
 
 
 export function renderTracking(sales: any[], interval: string, profiles: any[], snapshots: any[]) {
+    const now = new Date();
+    
+    // Filter out sales older than 500 minutes
+    const recentSales = sales.filter(s => {
+        const diffMs = now.getTime() - new Date(s.timestamp).getTime();
+        return diffMs < (500 * 60 * 1000);
+    });
+
     // 1. Bucket the items
     const listedGroups = bucketItems(snapshots);
-    const soldGroups = bucketItems(sales);
+    const soldGroups = bucketItems(recentSales);
 
     // 2. Generate content for groups
     const groupKeys = Object.keys(listedGroups) as Array<keyof typeof listedGroups>;
@@ -155,8 +163,11 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
                             <table style="margin: 0; border: none; background: transparent;">
                                 <tbody>
                                     ${sold.items.length === 0 ? '<tr><td style="text-align:center; padding: 20px; color: #475569; font-size: 0.85rem;">No sales yet.</td></tr>' : ''}
-                                    ${sold.items.map(s => `
-                                        <tr>
+                                    ${sold.items.map(s => {
+                                        const minutesAgo = Math.floor((now.getTime() - new Date(s.timestamp).getTime()) / 60000);
+                                        const opacity = Math.max(0, (100 - (minutesAgo / 5))) / 100;
+                                        return `
+                                        <tr style="opacity: ${opacity};">
                                             <td style="padding: 10px 20px;">
                                                 <div style="font-weight:500; color: #cbd5e1;">${s.itemName}</div>
                                                 <div style="font-size:0.75rem; color:#64748b; margin-top: 2px;">${s.tabName}</div>
@@ -166,7 +177,7 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
                                                 <div style="font-size:0.7rem; color:#475569; margin-top: 2px;"><span class="local-time-short" data-time="${s.timestamp}">Time</span></div>
                                             </td>
                                         </tr>
-                                    `).join('')}
+                                    `}).join('')}
                                 </tbody>
                             </table>
                         </div>
@@ -176,6 +187,7 @@ export function renderTracking(sales: any[], interval: string, profiles: any[], 
             </div>
         `;
     }).join('');
+
 
     const content = `
         <h1>Trade Tracking</h1>
