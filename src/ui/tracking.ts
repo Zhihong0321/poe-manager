@@ -47,44 +47,50 @@ function bucketItems(items: any[]) {
     const groups = {
         g1: { label: '0 ~ 100 Chaos', items: [] as any[], color: '#94a3b8' },
         g2: { label: '100 ~ 300 Chaos', items: [] as any[], color: '#cbd5e1' },
-        g3: { label: '300 ~ 700 Chaos', items: [] as any[], color: '#e2e8f0' },
+        g3: { label: '300 ~ 800 Chaos', items: [] as any[], color: '#e2e8f0' },
         
-        gEx1: { label: '0 ~ 10 Exalted', items: [] as any[], color: '#fdba74' }, // Orange-ish
-        gEx2: { label: '10 ~ 100 Exalted', items: [] as any[], color: '#fb923c' },
-        gEx3: { label: '100+ Exalted', items: [] as any[], color: '#ea580c' },
+        gEx1: { label: '0 ~ 20 Exalted', items: [] as any[], color: '#fdba74' }, 
+        gEx2: { label: '20 ~ 100 Exalted', items: [] as any[], color: '#fb923c' },
+        gEx3: { label: '100 ~ 200 Exalted', items: [] as any[], color: '#ea580c' },
+        gEx4: { label: '200+ Exalted', items: [] as any[], color: '#991b1b' },
 
         g4: { label: '1D ~ 2D', items: [] as any[], color: '#facc15' },
-        g5: { label: '3D ~ 8D', items: [] as any[], color: '#f59e0b' },
-        g6: { label: '8D and above', items: [] as any[], color: '#ef4444' },
+        g5: { label: '3D ~ 5D', items: [] as any[], color: '#f59e0b' },
+        g6: { label: '6D ~ 10D', items: [] as any[], color: '#d97706' },
+        g7: { label: '11D ~ 25D', items: [] as any[], color: '#b45309' },
+        g8: { label: '26D and above', items: [] as any[], color: '#ef4444' },
         
-        g7: { label: 'Unpriced / Other', items: [] as any[], color: '#64748b' }
+        g9: { label: 'Unpriced / Other', items: [] as any[], color: '#64748b' }
     };
 
     items.forEach(s => {
-        // Sales objects use 'price' field, Snapshots use 'note'. Handle both.
         const priceStr = s.note || s.price || '';
         const { value, currency } = parsePrice(priceStr);
         
         if (currency === 'c') {
             if (value < 100) groups.g1.items.push(s);
             else if (value < 300) groups.g2.items.push(s);
-            else if (value <= 700) groups.g3.items.push(s);
-            else groups.g7.items.push(s);
+            else if (value <= 800) groups.g3.items.push(s);
+            else groups.g9.items.push(s);
         } else if (currency === 'ex') {
-            if (value < 10) groups.gEx1.items.push(s);
+            if (value < 20) groups.gEx1.items.push(s);
             else if (value < 100) groups.gEx2.items.push(s);
-            else groups.gEx3.items.push(s);
+            else if (value < 200) groups.gEx3.items.push(s);
+            else groups.gEx4.items.push(s);
         } else if (currency === 'd') {
             if (value < 3) groups.g4.items.push(s);
-            else if (value < 8) groups.g5.items.push(s);
-            else groups.g6.items.push(s);
+            else if (value < 6) groups.g5.items.push(s);
+            else if (value < 11) groups.g6.items.push(s);
+            else if (value < 26) groups.g7.items.push(s);
+            else groups.g8.items.push(s);
         } else {
-            groups.g7.items.push(s);
+            groups.g9.items.push(s);
         }
     });
     
     return groups;
 }
+
 
 export function renderTracking(sales: any[], interval: string, profiles: any[], snapshots: any[]) {
     // 1. Bucket the items
